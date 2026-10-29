@@ -1,0 +1,11 @@
+dist
+node_modules
+coverage
+.env
+Dockerfile
+.dockerignore
+test
+examples
+k6
+grafana
+*.md

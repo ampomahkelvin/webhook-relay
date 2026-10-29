@@ -1,0 +1,48 @@
+name: webhook-inbox
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: webhook
+      POSTGRES_PASSWORD: webhook
+      POSTGRES_DB: webhook
+    ports:
+      - '127.0.0.1:5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U webhook -d webhook']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  migrate:
+    build: .
+    command: ['node', 'dist/db/migrate.js']
+    environment: &app-env
+      DATABASE_URL: postgres://webhook:webhook@postgres:5432/webhook
+      # Dev-only values; never use them outside the demo stack.
+      ENCRYPTION_KEY: nfxwkRb9px9u/baXe41g2X1qA/v6ADr22Cj1mfkJ1k=
+      ADMIN_API_KEY: whkadmin_dev_only
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build: .
+    command: ['node', 'dist/api/index.js']
+    environment: *app-env
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  pgdata:
