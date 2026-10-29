@@ -9,6 +9,7 @@ This document explains what the service guarantees, how it achieves those guaran
 ## 1. Goals and non-goals
 
 **Goals**
+
 - An event accepted by the API is never lost, and is delivered **at least once** to every matching endpoint.
 - One slow or failing endpoint never delays deliveries to other endpoints.
 - Receivers can verify that a request came from the service and was not replayed.
@@ -17,6 +18,7 @@ This document explains what the service guarantees, how it achieves those guaran
 - Producers can safely retry event submission (idempotent intake).
 
 **Non-goals (v1)**
+
 - Exactly-once delivery. It is not achievable over HTTP; receivers dedupe on `Webhook-Id`.
 - Ordering. Deliveries may arrive out of order, including for the same endpoint. This is documented, not hidden.
 - A UI, payload transformation, or event-type catalogs.
@@ -28,13 +30,13 @@ This document explains what the service guarantees, how it achieves those guaran
 
 ## 2. Concepts
 
-| Term | Meaning |
-|---|---|
-| **Tenant** | An account. Owns API keys, endpoints, and events. |
+| Term         | Meaning                                                                                |
+| ------------ | -------------------------------------------------------------------------------------- |
+| **Tenant**   | An account. Owns API keys, endpoints, and events.                                      |
 | **Endpoint** | A receiver URL registered by a tenant, with a signing secret and an event-type filter. |
-| **Event** | Something a producer reports: a type (`invoice.paid`) and a JSON payload. |
-| **Delivery** | The obligation to deliver one event to one endpoint. One row, with a lifecycle. |
-| **Attempt** | One HTTP request made for a delivery. Append-only log. |
+| **Event**    | Something a producer reports: a type (`invoice.paid`) and a JSON payload.              |
+| **Delivery** | The obligation to deliver one event to one endpoint. One row, with a lifecycle.        |
+| **Attempt**  | One HTTP request made for a delivery. Append-only log.                                 |
 
 An event fans out to one delivery per matching, enabled endpoint of the same tenant.
 
@@ -65,24 +67,24 @@ An event fans out to one delivery per matching, enabled endpoint of the same ten
  api, dispatcher, maintenance expose /metrics ──► Prometheus ──► Grafana
 ```
 
-| Process | Responsibility | Scaling |
-|---|---|---|
-| `api` | Intake, endpoint and delivery management, auth, intake rate limiting | Horizontal, stateless |
-| `dispatcher` | Claim due deliveries, send, record results, drive retries and the breaker | Horizontal (leases keep instances disjoint) |
-| `maintenance` | Retention pruning, expiry sweep, auto-disable of long-failing endpoints | Single instance (advisory lock) |
+| Process       | Responsibility                                                            | Scaling                                     |
+| ------------- | ------------------------------------------------------------------------- | ------------------------------------------- |
+| `api`         | Intake, endpoint and delivery management, auth, intake rate limiting      | Horizontal, stateless                       |
+| `dispatcher`  | Claim due deliveries, send, record results, drive retries and the breaker | Horizontal (leases keep instances disjoint) |
+| `maintenance` | Retention pruning, expiry sweep, auto-disable of long-failing endpoints   | Single instance (advisory lock)             |
 
 One codebase and one image, with three entrypoints.
 
 ### Why Postgres is the queue (and RabbitMQ is not used)
 
-| | Postgres rows with `next_attempt_at` (chosen) | Broker with retry queues |
-|---|---|---|
-| Retry schedule | Any schedule, with per-delivery jitter | One fixed TTL per retry queue |
-| Delivery history, replay, filters | Same rows, queryable | Needs a second store |
-| Per-endpoint pause and fairness | A `WHERE` clause | Awkward; needs a queue per endpoint |
-| Atomic intake | Event and deliveries commit together | Dual write: DB and broker |
-| Latency | Polling interval (sub-second) | Push |
-| Throughput ceiling | Thousands per second on one primary | Higher |
+|                                   | Postgres rows with `next_attempt_at` (chosen) | Broker with retry queues            |
+| --------------------------------- | --------------------------------------------- | ----------------------------------- |
+| Retry schedule                    | Any schedule, with per-delivery jitter        | One fixed TTL per retry queue       |
+| Delivery history, replay, filters | Same rows, queryable                          | Needs a second store                |
+| Per-endpoint pause and fairness   | A `WHERE` clause                              | Awkward; needs a queue per endpoint |
+| Atomic intake                     | Event and deliveries commit together          | Dual write: DB and broker           |
+| Latency                           | Polling interval (sub-second)                 | Push                                |
+| Throughput ceiling                | Thousands per second on one primary           | Higher                              |
 
 The ledger project needed an outbox because its source of truth (Postgres) and its transport (RabbitMQ) were two systems that cannot commit atomically. Here intake writes the event and its deliveries in **one transaction** in the same database that the dispatchers read, so that problem does not exist. The cost is a throughput ceiling and polling latency, both acceptable for this scope.
 
@@ -192,6 +194,7 @@ CREATE TABLE delivery_attempts (
 - **Not tables:** event-type catalogs, signing-secret history (rotation is a stretch goal), per-attempt request headers, and tenant settings.
 
 ### Retention
+
 `maintenance` deletes events older than `RETENTION_DAYS` (default 30), and their deliveries and attempts cascade. The idempotency window for event submission equals the retention window.
 
 ---
@@ -274,6 +277,7 @@ RETURNING d.id, d.event_id, d.endpoint_id, d.attempt_count;
 For each claimed delivery the dispatcher builds the request, signs it, sends it through the SSRF-safe client (section 8), and classifies the result.
 
 **Request**
+
 ```
 POST <endpoint url>
 Content-Type: application/json
@@ -286,6 +290,7 @@ Webhook-Signature: v1,<base64 HMAC-SHA256>
 ```
 
 **Signature** (Standard Webhooks style): `HMAC-SHA256(secret, "<id>.<timestamp>.<raw body>")`, base64-encoded, secret in the form `whsec_<base64 of 32 random bytes>`.
+
 - The timestamp is regenerated per attempt, so a retry hours later still passes a receiver's 5-minute tolerance.
 - The body that is signed is exactly the bytes that are sent.
 - Receivers must compare in constant time and reject timestamps outside the tolerance, which defeats replay of captured requests.
@@ -294,15 +299,15 @@ Webhook-Signature: v1,<base64 HMAC-SHA256>
 
 ### 6.3 Classifying results
 
-| Result | Outcome |
-|---|---|
-| `2xx` | **Success.** Delivery `succeeded`. |
-| `410 Gone` | Endpoint is gone: delivery `dead`, endpoint disabled (`gone`). |
-| `429`, `503` with `Retry-After` | Retry no earlier than the header says (capped at 1 h and never earlier than the schedule). |
-| Any other `4xx` or `5xx` | Failure, retry per schedule. |
-| `3xx` | Failure (redirects are never followed), retry. |
-| Timeout, connection, DNS, TLS error | Failure, retry. |
-| Resolves to a blocked address | Failure, retry (the DNS answer may change); recorded as `blocked_address`. |
+| Result                              | Outcome                                                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------------------ |
+| `2xx`                               | **Success.** Delivery `succeeded`.                                                         |
+| `410 Gone`                          | Endpoint is gone: delivery `dead`, endpoint disabled (`gone`).                             |
+| `429`, `503` with `Retry-After`     | Retry no earlier than the header says (capped at 1 h and never earlier than the schedule). |
+| Any other `4xx` or `5xx`            | Failure, retry per schedule.                                                               |
+| `3xx`                               | Failure (redirects are never followed), retry.                                             |
+| Timeout, connection, DNS, TLS error | Failure, retry.                                                                            |
+| Resolves to a blocked address       | Failure, retry (the DNS answer may change); recorded as `blocked_address`.                 |
 
 **Retry schedule** (Standard Webhooks style): attempts at roughly `0, 5 s, 5 min, 30 min, 2 h, 5 h, 10 h, 10 h` after the delivery was created, each with ±20% jitter. The schedule index is `attempt_count - cycle_start`. After the eighth failed attempt the delivery is `dead` (about 28 hours in total).
 
@@ -348,6 +353,7 @@ The service makes HTTP requests to URLs that tenants control. Without protection
 **Layer 1: at registration (fast feedback).** Parse the URL with the WHATWG parser (which normalizes tricks such as decimal or octal IP literals), require `https` (plain `http` only behind `ALLOW_INSECURE_HTTP=true`), reject embedded credentials, and reject literal IPs in blocked ranges. This is a convenience, not the defense.
 
 **Layer 2: at send time (the real defense).**
+
 1. Resolve the hostname to **all** addresses.
 2. If **any** address is in a blocked range, fail the attempt (`blocked_address`).
 3. Connect to the **validated IP**, with a custom `lookup` that returns it, while keeping the original hostname for the `Host` header, TLS SNI, and certificate verification. The hostname is never resolved a second time, which defeats DNS rebinding (an attacker's DNS answering public on the check and private on the connect).
@@ -357,10 +363,10 @@ The service makes HTTP requests to URLs that tenants control. Without protection
 
 **Blocked ranges:**
 
-| Family | Ranges |
-|---|---|
-| IPv4 | `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `224.0.0.0/4`, `240.0.0.0/4` |
-| IPv6 | `::`, `::1`, `fc00::/7`, `fe80::/10`, `ff00::/8`; IPv4-mapped (`::ffff:0:0/96`) and NAT64 (`64:ff9b::/96`) addresses are unwrapped and checked as IPv4 |
+| Family | Ranges                                                                                                                                                                        |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IPv4   | `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `224.0.0.0/4`, `240.0.0.0/4` |
+| IPv6   | `::`, `::1`, `fc00::/7`, `fe80::/10`, `ff00::/8`; IPv4-mapped (`::ffff:0:0/96`) and NAT64 (`64:ff9b::/96`) addresses are unwrapped and checked as IPv4                        |
 
 **Development escape hatch:** `ALLOW_PRIVATE_TARGETS=true` disables layer 2's IP check so the demo receiver can run on the Docker network. It is off by default, logs a loud warning at startup, and is reported by `/health/deep`.
 
@@ -380,21 +386,21 @@ The service makes HTTP requests to URLs that tenants control. Without protection
 
 ## 10. API surface
 
-| Method | Path | Notes |
-|---|---|---|
-| POST | `/v1/events` | Idempotent. `202`. |
-| GET | `/v1/events/:id` | Event and its deliveries |
-| POST | `/v1/endpoints` | Returns the signing secret once |
-| GET | `/v1/endpoints` | Cursor-paginated |
-| GET | `/v1/endpoints/:id` | Includes breaker state |
-| PATCH | `/v1/endpoints/:id` | URL, event types, enable or disable |
-| DELETE | `/v1/endpoints/:id` | Cascades its deliveries |
-| POST | `/v1/endpoints/:id/test` | Sends a `webhook.test` event to this endpoint only |
-| GET | `/v1/deliveries` | Filter by `endpointId`, `status`, `eventId`; cursor-paginated |
-| GET | `/v1/deliveries/:id` | Includes the attempt log |
-| POST | `/v1/deliveries/:id/replay` | For `dead` or `succeeded` deliveries; restarts the retry cycle |
-| POST | `/admin/tenants` | Admin key; creates a tenant and its first API key |
-| GET | `/health`, `/health/deep`, `/metrics` | Deep health reports delivery lag and unsafe config flags |
+| Method | Path                                  | Notes                                                          |
+| ------ | ------------------------------------- | -------------------------------------------------------------- |
+| POST   | `/v1/events`                          | Idempotent. `202`.                                             |
+| GET    | `/v1/events/:id`                      | Event and its deliveries                                       |
+| POST   | `/v1/endpoints`                       | Returns the signing secret once                                |
+| GET    | `/v1/endpoints`                       | Cursor-paginated                                               |
+| GET    | `/v1/endpoints/:id`                   | Includes breaker state                                         |
+| PATCH  | `/v1/endpoints/:id`                   | URL, event types, enable or disable                            |
+| DELETE | `/v1/endpoints/:id`                   | Cascades its deliveries                                        |
+| POST   | `/v1/endpoints/:id/test`              | Sends a `webhook.test` event to this endpoint only             |
+| GET    | `/v1/deliveries`                      | Filter by `endpointId`, `status`, `eventId`; cursor-paginated  |
+| GET    | `/v1/deliveries/:id`                  | Includes the attempt log                                       |
+| POST   | `/v1/deliveries/:id/replay`           | For `dead` or `succeeded` deliveries; restarts the retry cycle |
+| POST   | `/admin/tenants`                      | Admin key; creates a tenant and its first API key              |
+| GET    | `/health`, `/health/deep`, `/metrics` | Deep health reports delivery lag and unsafe config flags       |
 
 Errors use one shape, `{ code, message }`, with correct status codes (400, 401, 404, 409, 422, 429). A global handler maps typed errors; Postgres unique violations map to 409.
 
@@ -405,15 +411,15 @@ Errors use one shape, `{ code, message }`, with correct status codes (400, 401, 
 - Structured JSON logs (pino) carrying `eventId`, `deliveryId`, `endpointId`, and `attempt`. No secrets or payloads.
 - Prometheus metrics, with a Grafana dashboard provisioned from files.
 
-| Metric | Why |
-|---|---|
-| `events_received_total` | Intake rate |
-| `deliveries_total{outcome}` | Success, retry, dead |
-| `delivery_attempt_duration_seconds` (histogram) | Receiver latency |
-| `deliveries_pending` (gauge) | Backlog |
-| **`oldest_due_delivery_age_seconds`** (gauge) | **Delivery lag: how late the most overdue claimable delivery is. The single most useful number.** |
-| `endpoints_circuit_open` (gauge) | Unhealthy receivers |
-| `intake_rate_limited_total` | Producer pressure |
+| Metric                                          | Why                                                                                               |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `events_received_total`                         | Intake rate                                                                                       |
+| `deliveries_total{outcome}`                     | Success, retry, dead                                                                              |
+| `delivery_attempt_duration_seconds` (histogram) | Receiver latency                                                                                  |
+| `deliveries_pending` (gauge)                    | Backlog                                                                                           |
+| **`oldest_due_delivery_age_seconds`** (gauge)   | **Delivery lag: how late the most overdue claimable delivery is. The single most useful number.** |
+| `endpoints_circuit_open` (gauge)                | Unhealthy receivers                                                                               |
+| `intake_rate_limited_total`                     | Producer pressure                                                                                 |
 
 Gauges are computed from the database (using the partial indexes) and cached for 5 seconds.
 
@@ -421,25 +427,25 @@ Gauges are computed from the database (using the partial indexes) and cached for
 
 ## 12. Failure modes
 
-| Scenario | Behavior | Proved by |
-|---|---|---|
-| Producer retries a submission | Same key and hash: one event, same `202` | Replay test |
-| 50 identical submissions at once | One event, one delivery per endpoint | Parallel same-key test |
-| Same key, different payload | `422` | Hash-mismatch test |
-| Intake fails midway | Transaction rolls back: no event, no deliveries | Fault-injection test |
-| Dispatcher crashes mid-send | Lease expires; delivery retried (receiver may see a duplicate) | Kill test |
-| Two dispatchers at once | Disjoint claims; no concurrent double-send | Claim concurrency test |
-| Slow worker finishes after losing its lease | Fenced: attempt logged, delivery untouched | Stale-worker test |
-| Receiver returns 500 forever | Retries on schedule, breaker opens, delivery `dead` | Schedule and breaker tests |
-| One endpoint hangs | Other endpoints keep flowing | Fairness test |
-| Receiver replies 429 with `Retry-After` | Next attempt not earlier than the header | Retry-After test |
-| Receiver replies 410 | Delivery dead, endpoint disabled | Classification test |
-| Endpoint resolves to `127.0.0.1` | Blocked, never connected | SSRF test matrix |
-| DNS answers public, then private | Blocked: single resolution, connect to validated IP | Rebinding test |
-| Redirect to an internal address | Not followed; attempt is a failure | Redirect test |
-| Receiver replies with a huge body | Read stops at 64 KB | Size-limit test |
-| Tenant A requests tenant B's resource | `404` | Isolation tests |
-| Database restarts | In-flight leases expire; dispatchers reconnect and resume | Outage test |
+| Scenario                                    | Behavior                                                       | Proved by                  |
+| ------------------------------------------- | -------------------------------------------------------------- | -------------------------- |
+| Producer retries a submission               | Same key and hash: one event, same `202`                       | Replay test                |
+| 50 identical submissions at once            | One event, one delivery per endpoint                           | Parallel same-key test     |
+| Same key, different payload                 | `422`                                                          | Hash-mismatch test         |
+| Intake fails midway                         | Transaction rolls back: no event, no deliveries                | Fault-injection test       |
+| Dispatcher crashes mid-send                 | Lease expires; delivery retried (receiver may see a duplicate) | Kill test                  |
+| Two dispatchers at once                     | Disjoint claims; no concurrent double-send                     | Claim concurrency test     |
+| Slow worker finishes after losing its lease | Fenced: attempt logged, delivery untouched                     | Stale-worker test          |
+| Receiver returns 500 forever                | Retries on schedule, breaker opens, delivery `dead`            | Schedule and breaker tests |
+| One endpoint hangs                          | Other endpoints keep flowing                                   | Fairness test              |
+| Receiver replies 429 with `Retry-After`     | Next attempt not earlier than the header                       | Retry-After test           |
+| Receiver replies 410                        | Delivery dead, endpoint disabled                               | Classification test        |
+| Endpoint resolves to `127.0.0.1`            | Blocked, never connected                                       | SSRF test matrix           |
+| DNS answers public, then private            | Blocked: single resolution, connect to validated IP            | Rebinding test             |
+| Redirect to an internal address             | Not followed; attempt is a failure                             | Redirect test              |
+| Receiver replies with a huge body           | Read stops at 64 KB                                            | Size-limit test            |
+| Tenant A requests tenant B's resource       | `404`                                                          | Isolation tests            |
+| Database restarts                           | In-flight leases expire; dispatchers reconnect and resume      | Outage test                |
 
 ---
 
@@ -476,19 +482,19 @@ Gauges are computed from the database (using the partial indexes) and cached for
 
 ## 16. Decision log
 
-| Decision | Alternative | Reason |
-|---|---|---|
-| Postgres as the queue | RabbitMQ with retry queues | Atomic intake, flexible per-delivery schedules, replay and history from the same rows |
-| HTTP intake, no broker | Consume from a broker | Producer-agnostic; no dual-write problem to solve |
-| Lease and short transactions | Hold a transaction during the HTTP call | Row locks are never held across network I/O |
-| Fencing by `attempt_count` | Trust the lease | A slow worker cannot overwrite newer state |
-| At-least-once | Exactly-once | Not achievable over HTTP; receivers dedupe on `Webhook-Id` |
-| Idempotency key as an event column | Separate idempotency table | The resource is its own record; replay is derived |
-| Standard Webhooks signing and schedule | Custom scheme | Interoperable with existing receiver libraries |
-| Resolve once, connect to the validated IP | Validate, then let the client resolve | Defeats DNS rebinding |
-| No redirects | Follow with re-validation | Simpler and safer; webhooks should not redirect |
-| Breaker state on `endpoints` | Per-delivery retry state only | The receiver's health is shared by all its deliveries |
-| Cascade deletes for retention | `RESTRICT` as in the ledger | Operational data with a retention policy |
-| Native enums for closed sets | Lookup tables | Fewer joins, readable SQL |
-| One-level tenancy | Two-level | The extra layer adds surface without adding hard problems; documented migration path |
-| Cap endpoints per tenant | Unbounded fan-out | Keeps intake a single bounded transaction |
+| Decision                                  | Alternative                             | Reason                                                                                |
+| ----------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------- |
+| Postgres as the queue                     | RabbitMQ with retry queues              | Atomic intake, flexible per-delivery schedules, replay and history from the same rows |
+| HTTP intake, no broker                    | Consume from a broker                   | Producer-agnostic; no dual-write problem to solve                                     |
+| Lease and short transactions              | Hold a transaction during the HTTP call | Row locks are never held across network I/O                                           |
+| Fencing by `attempt_count`                | Trust the lease                         | A slow worker cannot overwrite newer state                                            |
+| At-least-once                             | Exactly-once                            | Not achievable over HTTP; receivers dedupe on `Webhook-Id`                            |
+| Idempotency key as an event column        | Separate idempotency table              | The resource is its own record; replay is derived                                     |
+| Standard Webhooks signing and schedule    | Custom scheme                           | Interoperable with existing receiver libraries                                        |
+| Resolve once, connect to the validated IP | Validate, then let the client resolve   | Defeats DNS rebinding                                                                 |
+| No redirects                              | Follow with re-validation               | Simpler and safer; webhooks should not redirect                                       |
+| Breaker state on `endpoints`              | Per-delivery retry state only           | The receiver's health is shared by all its deliveries                                 |
+| Cascade deletes for retention             | `RESTRICT` as in the ledger             | Operational data with a retention policy                                              |
+| Native enums for closed sets              | Lookup tables                           | Fewer joins, readable SQL                                                             |
+| One-level tenancy                         | Two-level                               | The extra layer adds surface without adding hard problems; documented migration path  |
+| Cap endpoints per tenant                  | Unbounded fan-out                       | Keeps intake a single bounded transaction                                             |
