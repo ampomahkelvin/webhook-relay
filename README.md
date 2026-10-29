@@ -4,7 +4,7 @@ Multi-tenant, producer-agnostic webhook delivery service: signed requests, retri
 
 See [`DESIGN.md`](./DESIGN.md) for what it guarantees (and why), and [`PLAN.md`](./PLAN.md) for the build plan.
 
-**Status: phase 0 — scaffold.** Intake, dispatch, and the breaker are not implemented yet; the phase checklist is in `PLAN.md` section 3.
+**Status: phase 1 — tenancy and auth.** Tenant and API-key management live; event intake and dispatch come later. The phase checklist is in `PLAN.md` section 3.
 
 ## Quickstart
 
@@ -16,6 +16,17 @@ curl -s localhost:3000/health
 ```
 
 `docker compose up` starts Postgres, runs the migrations, and starts the API. Postgres is exposed on the host as `127.0.0.1:5433` (to avoid colliding with a local Postgres).
+
+Example — create a tenant and use its key (dev admin key from `docker-compose.yml`):
+
+```sh
+curl -s -X POST localhost:3000/admin/tenants \
+  -H 'Authorization: Bearer whkadmin_dev_only' -H 'Content-Type: application/json' \
+  -d '{"name":"acme"}'
+# → {"tenant":{...},"apiKey":{"key":"whk_...","id":"..."}}  # save the key; shown once
+
+curl -s localhost:3000/v1/me -H 'Authorization: Bearer whk_...'
+```
 
 ## Development
 
