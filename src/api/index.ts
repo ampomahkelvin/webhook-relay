@@ -10,7 +10,7 @@ async function main(): Promise<void> {
   const pool = createPool(config.databaseUrl)
   pool.on('error', (error) => logger.error({ err: error }, 'idle client error'))
 
-  const app = createApp({ pool, logger })
+  const app = createApp({ pool, logger, adminApiKey: config.adminApiKey })
   const server = app.listen(config.port, () => {
     logger.info({ port: config.port }, 'api listening')
   })
