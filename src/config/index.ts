@@ -13,7 +13,12 @@ const intInRange = (min: number, max: number, defaultValue: number) =>
 const envSchema = z.object({
   // --- Required ---
   DATABASE_URL: z.string().min(1),
-  ENCRYPTION_KEY: z.string().min(1),
+  ENCRYPTION_KEY: z
+    .string()
+    .min(1)
+    .refine((value) => Buffer.from(value, 'base64').length === 32, {
+      message: 'must decode from base64 to exactly 32 bytes',
+    }),
   ADMIN_API_KEY: z.string().min(1),
 
   // --- Server ---

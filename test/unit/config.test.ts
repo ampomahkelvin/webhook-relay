@@ -3,7 +3,7 @@ import { loadConfig } from '../../src/config/index.js'
 
 const baseEnv = {
   DATABASE_URL: 'postgres://webhook:webhook@localhost:5432/webhook',
-  ENCRYPTION_KEY: 'nfxwkRb9px9u/baXe41g2X1qA/v6ADr22Cj1mfkJ1k=',
+  ENCRYPTION_KEY: '/nfxwkRb9px9u/baXe41g2X1qA/v6ADr22Cj1mfkJ1k=',
   ADMIN_API_KEY: 'whkadmin_local_dev',
 }
 

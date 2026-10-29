@@ -21,10 +21,20 @@ export interface AppOptions {
   pool: Pool
   logger: Logger
   adminApiKey: string
+  maxEndpointsPerTenant: number
+  allowInsecureHttp: boolean
+  encryptionKey: string
 }
 
 /** Build the Express app. Route modules are added phase by phase. */
-export function createApp({ pool, logger, adminApiKey }: AppOptions): Express {
+export function createApp({
+  pool,
+  logger,
+  adminApiKey,
+  maxEndpointsPerTenant,
+  allowInsecureHttp,
+  encryptionKey,
+}: AppOptions): Express {
   const app = express()
   app.disable('x-powered-by')
   app.use(
@@ -41,7 +51,7 @@ export function createApp({ pool, logger, adminApiKey }: AppOptions): Express {
 
   app.use(healthRouter(pool))
   app.use('/admin', adminRouter({ pool, adminApiKey }))
-  app.use('/v1', tenantRouter(pool))
+  app.use('/v1', tenantRouter(pool, { maxEndpointsPerTenant, allowInsecureHttp, encryptionKey }))
 
   // Unknown routes
   app.use((req: Request, res: Response) => {
