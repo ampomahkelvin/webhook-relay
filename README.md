@@ -4,7 +4,7 @@ Multi-tenant, producer-agnostic webhook delivery service: signed requests, retri
 
 See [`DESIGN.md`](./DESIGN.md) for what it guarantees (and why), and [`PLAN.md`](./PLAN.md) for the build plan.
 
-**Status: phase 1 — tenancy and auth.** Tenant and API-key management live; event intake and dispatch come later. The phase checklist is in `PLAN.md` section 3.
+**Status: phase 2 — endpoint management.** Tenants, keys, and endpoint CRUD with SSRF layer-1 URL validation are live; event intake and dispatch come later. The phase checklist is in `PLAN.md` section 3.
 
 ## Quickstart
 

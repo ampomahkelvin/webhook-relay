@@ -23,7 +23,7 @@ services:
     environment: &app-env
       DATABASE_URL: postgres://webhook:webhook@postgres:5432/webhook
       # Dev-only values; never use them outside the demo stack.
-      ENCRYPTION_KEY: nfxwkRb9px9u/baXe41g2X1qA/v6ADr22Cj1mfkJ1k=
+      ENCRYPTION_KEY: /nfxwkRb9px9u/baXe41g2X1qA/v6ADr22Cj1mfkJ1k=
       ADMIN_API_KEY: whkadmin_dev_only
       LOG_LEVEL: info
     depends_on:

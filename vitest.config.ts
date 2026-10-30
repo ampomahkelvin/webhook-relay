@@ -6,5 +6,8 @@ export default defineConfig({
     testTimeout: 120_000,
     hookTimeout: 120_000,
     pool: 'forks',
+    // Testcontainers files start their own Postgres; serial files keep
+    // container startup deterministic.
+    fileParallelism: false,
   },
 })
