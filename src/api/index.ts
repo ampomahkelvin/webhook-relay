@@ -17,6 +17,7 @@ async function main(): Promise<void> {
     maxEndpointsPerTenant: config.maxEndpointsPerTenant,
     allowInsecureHttp: config.allowInsecureHttp,
     encryptionKey: config.encryptionKey,
+    intake: { ratePerMinute: config.intakeRatePerMinute, burst: config.intakeBurst },
   })
   const server = app.listen(config.port, () => {
     logger.info({ port: config.port }, 'api listening')
