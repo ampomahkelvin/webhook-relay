@@ -2,9 +2,9 @@ import { Router } from 'express'
 import type { Pool } from 'pg'
 import { requireTenantAuth } from '../../auth/tenant-auth.js'
 import { endpointRouter, type EndpointRouterOptions } from './endpoints.js'
+import { eventsRouter, type IntakeOptions } from './events.js'
 
-/** Tenant-scoped routes mounted at /v1 (authenticated by the API key). */
-export type TenantRouterOptions = EndpointRouterOptions
+export type TenantRouterOptions = EndpointRouterOptions & { intake: IntakeOptions }
 
 /** Tenant-scoped routes mounted at /v1 (authenticated by the API key). */
 export function tenantRouter(pool: Pool, options: TenantRouterOptions): Router {
@@ -17,6 +17,7 @@ export function tenantRouter(pool: Pool, options: TenantRouterOptions): Router {
   })
 
   router.use(endpointRouter(pool, options))
+  router.use(eventsRouter(pool, options.intake))
 
   return router
 }

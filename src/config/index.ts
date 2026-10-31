@@ -27,6 +27,8 @@ const envSchema = z.object({
 
   // --- Intake ---
   MAX_ENDPOINTS_PER_TENANT: intInRange(1, 1000, 20),
+  INTAKE_RATE_PER_MINUTE: intInRange(0, 100_000_000, 600),
+  INTAKE_BURST: intInRange(1, 100_000_000, 100),
 
   // --- Dispatcher ---
   DISPATCHER_CONCURRENCY: intInRange(1, 1000, 50),
@@ -55,6 +57,8 @@ export type Config = {
   port: number
   logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace'
   maxEndpointsPerTenant: number
+  intakeRatePerMinute: number
+  intakeBurst: number
   dispatcherConcurrency: number
   claimBatchSize: number
   perEndpointClaimCap: number
@@ -97,6 +101,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     port: parsed.PORT,
     logLevel: parsed.LOG_LEVEL,
     maxEndpointsPerTenant: parsed.MAX_ENDPOINTS_PER_TENANT,
+    intakeRatePerMinute: parsed.INTAKE_RATE_PER_MINUTE,
+    intakeBurst: parsed.INTAKE_BURST,
     dispatcherConcurrency: parsed.DISPATCHER_CONCURRENCY,
     claimBatchSize: parsed.CLAIM_BATCH_SIZE,
     perEndpointClaimCap: parsed.PER_ENDPOINT_CLAIM_CAP,

@@ -9,6 +9,9 @@ export const TEST_ENCRYPTION_KEY = '/nfxwkRb9px9u/baXe41g2X1qA/v6ADr22Cj1mfkJ1k=
 export interface TestAppOptions {
   maxEndpointsPerTenant?: number
   allowInsecureHttp?: boolean
+  /** Intake rate-limit overrides; defaults are generous enough for tests. */
+  intakeRatePerMinute?: number
+  intakeBurst?: number
 }
 
 export interface TestApp {
@@ -30,6 +33,12 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
     maxEndpointsPerTenant: options.maxEndpointsPerTenant ?? 20,
     allowInsecureHttp: options.allowInsecureHttp ?? false,
     encryptionKey: TEST_ENCRYPTION_KEY,
+    intake: {
+      // Tests submit bursts and parallel batches; the real defaults stay
+      // in config. Rate-limit behavior is its own dedicated test.
+      ratePerMinute: options.intakeRatePerMinute ?? 1_000_000,
+      burst: options.intakeBurst ?? 10_000,
+    },
   })
   return { app, db, adminKey, stop: () => db.stop() }
 }

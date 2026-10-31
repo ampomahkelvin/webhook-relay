@@ -7,6 +7,7 @@ export class AppError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly headers: Record<string, string> = {},
   ) {
     super(message)
     this.name = 'AppError'
@@ -50,6 +51,7 @@ export function errorHandler(logger: Logger) {
     if (error instanceof AppError) {
       if (error.status >= 500) logger.error({ err: error, requestId: req.id }, 'app error')
       else logger.info({ code: error.code, requestId: req.id }, error.message)
+      for (const [name, value] of Object.entries(error.headers)) res.set(name, value)
       res.status(error.status).json({ code: error.code, message: error.message })
       return
     }

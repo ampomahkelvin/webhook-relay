@@ -24,6 +24,7 @@ export interface AppOptions {
   maxEndpointsPerTenant: number
   allowInsecureHttp: boolean
   encryptionKey: string
+  intake: { ratePerMinute: number; burst: number }
 }
 
 /** Build the Express app. Route modules are added phase by phase. */
@@ -34,6 +35,7 @@ export function createApp({
   maxEndpointsPerTenant,
   allowInsecureHttp,
   encryptionKey,
+  intake,
 }: AppOptions): Express {
   const app = express()
   app.disable('x-powered-by')
@@ -51,7 +53,10 @@ export function createApp({
 
   app.use(healthRouter(pool))
   app.use('/admin', adminRouter({ pool, adminApiKey }))
-  app.use('/v1', tenantRouter(pool, { maxEndpointsPerTenant, allowInsecureHttp, encryptionKey }))
+  app.use(
+    '/v1',
+    tenantRouter(pool, { maxEndpointsPerTenant, allowInsecureHttp, encryptionKey, intake }),
+  )
 
   // Unknown routes
   app.use((req: Request, res: Response) => {

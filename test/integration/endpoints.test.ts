@@ -22,6 +22,7 @@ beforeAll(async () => {
     maxEndpointsPerTenant: 50,
     allowInsecureHttp: false,
     encryptionKey: TEST_ENCRYPTION_KEY,
+    intake: { ratePerMinute: 1_000_000, burst: 10_000 },
   })
 })
 afterAll(() => env.stop())
