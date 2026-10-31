@@ -1,0 +1,19 @@
+{
+  "name": "webhook-receiver-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reference webhook receiver: verifies Standard Webhooks signatures, dedupes on Webhook-Id, and can misbehave on demand for demos and tests",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "tsx server.ts"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6"
+  }
+}
