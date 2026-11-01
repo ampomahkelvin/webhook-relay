@@ -15,6 +15,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "api": "tsx src/api/index.ts",
+    "dispatcher": "tsx src/dispatcher/index.ts",
     "migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {
