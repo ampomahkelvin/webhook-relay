@@ -3,6 +3,7 @@ import type { Pool } from 'pg'
 import { requireTenantAuth } from '../../auth/tenant-auth.js'
 import { endpointRouter, type EndpointRouterOptions } from './endpoints.js'
 import { eventsRouter, type IntakeOptions } from './events.js'
+import { deliveriesRouter } from './deliveries.js'
 
 export type TenantRouterOptions = EndpointRouterOptions & { intake: IntakeOptions }
 
@@ -18,6 +19,7 @@ export function tenantRouter(pool: Pool, options: TenantRouterOptions): Router {
 
   router.use(endpointRouter(pool, options))
   router.use(eventsRouter(pool, options.intake))
+  router.use(deliveriesRouter(pool))
 
   return router
 }
