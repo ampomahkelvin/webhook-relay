@@ -26,6 +26,7 @@ async function main(): Promise<void> {
       perEndpointClaimCap: config.perEndpointClaimCap,
       pollIntervalMs: config.pollIntervalMs,
       leaseSeconds: config.leaseSeconds,
+      breakerThreshold: config.breakerThreshold,
       breakerCooldownSeconds: config.breakerCooldownSeconds,
       encryptionKeyBase64: config.encryptionKey,
       requestTimeoutMs: config.requestTimeoutMs,

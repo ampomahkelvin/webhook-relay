@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Pool } from 'pg'
-import { recordAttempt } from '../../src/dispatcher/record.js'
+import { recordAttempt, type RecordParams } from '../../src/dispatcher/record.js'
 import { startTestDatabase, type TestDatabase } from '../helpers/test-db.js'
 import { seedWorkload, type SeedWorkload } from '../helpers/seed.js'
 
@@ -75,11 +75,23 @@ describe('recordAttempt', () => {
     await db.stop()
   })
 
-  it('a success completes the delivery and logs the attempt', async () => {
-    const { deliveryIds } = await claimedOnce(db)
-    const id = deliveryIds[0]!
+  /** recordAttempt with the endpoint wiring filled in from the workload. */
+  function rec(
+    workload: SeedWorkload,
+    args: Omit<RecordParams, 'endpointId' | 'breakerThreshold'>,
+  ) {
+    return recordAttempt(db.pool, {
+      ...args,
+      endpointId: workload.endpointId,
+      breakerThreshold: 5,
+    })
+  }
 
-    const result = await recordAttempt(db.pool, {
+  it('a success completes the delivery and logs the attempt', async () => {
+    const workload = await claimedOnce(db)
+    const id = workload.deliveryIds[0]!
+
+    const result = await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
       outcome: 'succeeded',
@@ -101,10 +113,10 @@ describe('recordAttempt', () => {
   })
 
   it('a retry keeps the delivery pending at the scheduled instant and clears the lease', async () => {
-    const { deliveryIds } = await claimedOnce(db)
-    const id = deliveryIds[0]!
+    const workload = await claimedOnce(db)
+    const id = workload.deliveryIds[0]!
 
-    const result = await recordAttempt(db.pool, {
+    const result = await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
       outcome: 'retry',
@@ -125,10 +137,10 @@ describe('recordAttempt', () => {
   })
 
   it('a dead delivery is terminal with a completed_at', async () => {
-    const { deliveryIds } = await claimedOnce(db)
-    const id = deliveryIds[0]!
+    const workload = await claimedOnce(db)
+    const id = workload.deliveryIds[0]!
 
-    const result = await recordAttempt(db.pool, {
+    const result = await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
       outcome: 'dead',
@@ -145,9 +157,9 @@ describe('recordAttempt', () => {
   })
 
   it('stores at most 1 KB of the response snippet', async () => {
-    const { deliveryIds } = await claimedOnce(db)
-    const id = deliveryIds[0]!
-    await recordAttempt(db.pool, {
+    const workload = await claimedOnce(db)
+    const id = workload.deliveryIds[0]!
+    await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
       outcome: 'succeeded',
@@ -161,10 +173,10 @@ describe('recordAttempt', () => {
   })
 
   it('write-once semantics: a repeated record for the same attempt does not duplicate the log row', async () => {
-    const { deliveryIds } = await claimedOnce(db)
-    const id = deliveryIds[0]!
+    const workload = await claimedOnce(db)
+    const id = workload.deliveryIds[0]!
     for (let i = 0; i < 2; i++) {
-      await recordAttempt(db.pool, {
+      await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
         outcome: 'retry',
@@ -184,14 +196,14 @@ describe('recordAttempt', () => {
 
   describe('fencing', () => {
     it('a stale attempt number is logged but never touches the delivery', async () => {
-      const { deliveryIds } = await claimedOnce(db)
-      const id = deliveryIds[0]!
+      const workload = await claimedOnce(db)
+      const id = workload.deliveryIds[0]!
       // Another claimer has moved the delivery on to attempt 2 (e.g. the
       // lease expired after a hang) while attempt 1's worker finally
       // reports.
       await db.pool.query(`UPDATE deliveries SET attempt_count = 2 WHERE id = $1`, [id])
 
-      const result = await recordAttempt(db.pool, {
+      const result = await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
         outcome: 'succeeded',
@@ -211,10 +223,10 @@ describe('recordAttempt', () => {
     })
 
     it('the newer attempt still owns the delivery', async () => {
-      const { deliveryIds } = await claimedOnce(db)
-      const id = deliveryIds[0]!
+      const workload = await claimedOnce(db)
+      const id = workload.deliveryIds[0]!
       await db.pool.query(`UPDATE deliveries SET attempt_count = 2 WHERE id = $1`, [id])
-      const fresh = await recordAttempt(db.pool, {
+      const fresh = await rec(workload, {
         deliveryId: id,
         claimedAttempt: 2,
         outcome: 'succeeded',
@@ -227,9 +239,9 @@ describe('recordAttempt', () => {
     })
 
     it('recording a second time is stale after the delivery already moved', async () => {
-      const { deliveryIds } = await claimedOnce(db)
-      const id = deliveryIds[0]!
-      await recordAttempt(db.pool, {
+      const workload = await claimedOnce(db)
+      const id = workload.deliveryIds[0]!
+      await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
         outcome: 'succeeded',
@@ -238,7 +250,7 @@ describe('recordAttempt', () => {
         statusCode: 200,
       })
       // Same attempt recorded again: the WHERE status = 'pending' misses.
-      const again = await recordAttempt(db.pool, {
+      const again = await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
         outcome: 'retry',
