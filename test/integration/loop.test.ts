@@ -60,6 +60,7 @@ describe('dispatcher loop', () => {
       perEndpointClaimCap: 4,
       pollIntervalMs: 30,
       leaseSeconds: 5,
+      breakerThreshold: 5,
       breakerCooldownSeconds: 60,
       encryptionKeyBase64: TEST_ENCRYPTION_KEY,
       requestTimeoutMs: 2_000,
@@ -134,7 +135,7 @@ describe('dispatcher loop', () => {
       endpointUrl: `${receiver.url.replace('/hook', '')}/flaky?failRate=1&status=500`,
       secret: receiver.secret,
     })
-    const dispatcher = makeDispatcher(seed)
+    const dispatcher = makeDispatcher(seed, { breakerThreshold: 999 })
     dispatcher.start()
     try {
       await waitUntil(async () => (await statusCounts(db.pool, seed.endpointId)).dead === 1, {
@@ -186,8 +187,8 @@ describe('dispatcher loop', () => {
     })
     const dispatcher = makeDispatcher(seed, {
       batchSize: 5,
-      perEndpointClaimCap: 5, // the claim cap must not bind below the batch...
-      pollIntervalMs: 2_000, // ...or a sleep between batches would blow past this
+      perEndpointClaimCap: 10, // headroom: in-flight leases subtract from the cap
+      pollIntervalMs: 2_000, // a sleep between batches would blow way past this
     })
     dispatcher.start()
     const startedAt = Date.now()
@@ -210,7 +211,11 @@ describe('dispatcher loop', () => {
       endpointUrl: receiver.url,
       secret: receiver.secret,
     })
-    const dispatcher = makeDispatcher(seed, { concurrency: 3, batchSize: 2 })
+    const dispatcher = makeDispatcher(seed, {
+      concurrency: 3,
+      batchSize: 2,
+      perEndpointClaimCap: 8,
+    })
     dispatcher.start()
     await waitUntil(async () => dispatcher.stats().succeeded >= 5)
     const stopStartedAt = Date.now()

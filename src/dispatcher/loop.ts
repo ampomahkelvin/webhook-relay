@@ -33,6 +33,7 @@ export interface DispatcherConfig extends SendCallOptions {
   perEndpointClaimCap: number
   pollIntervalMs: number
   leaseSeconds: number
+  breakerThreshold: number
   breakerCooldownSeconds: number
   /** Retry-schedule override for tests; defaults to the standard 7 delays. */
   delaysMs?: readonly number[]
@@ -106,6 +107,7 @@ export function createDispatcher(pool: Pool, config: DispatcherConfig, logger: L
 
   interface RecordAttemptArgs {
     outcome: SendOutcome
+    deadReason?: 'gone' | 'schedule_exhausted'
     nextAttemptAtMs?: number
   }
 
@@ -121,7 +123,7 @@ export function createDispatcher(pool: Pool, config: DispatcherConfig, logger: L
     }
     if (sent.outcome.kind === 'gone') {
       stats.dead++
-      return { outcome: 'dead' as const } // endpoint disabling is Phase 6
+      return { outcome: 'dead' as const, deadReason: 'gone' as const }
     }
     const scheduled = scheduleNext({
       attemptNumber: claimed.attemptNumber - details.cycleStart,
@@ -131,7 +133,7 @@ export function createDispatcher(pool: Pool, config: DispatcherConfig, logger: L
     })
     if (scheduled.outcome === 'dead') {
       stats.dead++
-      return { outcome: 'dead' as const }
+      return { outcome: 'dead' as const, deadReason: 'schedule_exhausted' as const }
     }
     stats.retried++
     return { outcome: 'retry' as const, nextAttemptAtMs: scheduled.nextAttemptAtMs }
@@ -154,6 +156,8 @@ export function createDispatcher(pool: Pool, config: DispatcherConfig, logger: L
       const decided = await decideOutcome(claimed, details, sent)
       const recorded = await recordAttempt(pool, {
         deliveryId: claimed.id,
+        endpointId: claimed.endpointId,
+        breakerThreshold: config.breakerThreshold,
         claimedAttempt: claimed.attemptNumber,
         startedAtMs: sent.startedAtMs,
         durationMs: sent.durationMs,
@@ -178,6 +182,8 @@ export function createDispatcher(pool: Pool, config: DispatcherConfig, logger: L
       try {
         const recorded = await recordAttempt(pool, {
           deliveryId: claimed.id,
+          endpointId: claimed.endpointId,
+          breakerThreshold: config.breakerThreshold,
           claimedAttempt: claimed.attemptNumber,
           outcome: 'retry',
           nextAttemptAtMs: Date.now() + config.pollIntervalMs,
@@ -251,7 +257,11 @@ export function createDispatcher(pool: Pool, config: DispatcherConfig, logger: L
       if (stopping) return
       stopping = true
       resolveStopSignal()
-      await Promise.allSettled([...inFlight])
+      // A claim that was already in the air when stop() was called can add
+      // sends after the first snapshot; keep draining until none remain.
+      while (inFlight.size > 0) {
+        await Promise.allSettled([...inFlight])
+      }
     },
     stats: () => ({ ...stats }),
     inFlightCount: () => inFlight.size,

@@ -154,19 +154,42 @@ describe('claimDueDeliveries', () => {
     const afterCooldown = await claim(db, { nowMs: NOW + 50_000 })
     expect(afterCooldown.map((c) => c.id)).toContain(workload.deliveryIds[0])
   })
+})
 
-  it('caps claims per endpoint (a backlog on one endpoint cannot hog a batch)', async () => {
+describe('per-endpoint capacity (exclusive database, exact counts)', () => {
+  let db: TestDatabase
+  beforeAll(async () => {
+    db = await startTestDatabase()
+  })
+  afterAll(async () => {
+    await db.stop()
+  })
+
+  it('caps claims per endpoint and makes progress in follow-up batches', async () => {
     await seedWorkload(db.pool, { count: 25, endpointUrl: URL, nextAttemptAt: SEED_DUE })
-    const claimed = await claim(db, { perEndpointClaimCap: 5, batchSize: 100 })
-    expect(claimed).toHaveLength(5)
-    // Remaining 20 stay pending.
-    const remaining = await db.pool.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM deliveries WHERE endpoint_id = $1 AND attempt_count = 0`,
-      [claimed[0]!.endpointId],
-    )
-    expect(Number(remaining.rows[0]!.n)).toBe(20)
-    // And follow-up batches make progress on the same endpoint.
+    const first = await claim(db, { perEndpointClaimCap: 5, batchSize: 100 })
+    expect(first).toHaveLength(5)
+    // Cap binds below the batch: capacity, not the batch limit, is the ceiling.
     const second = await claim(db, { perEndpointClaimCap: 10, batchSize: 30 })
-    expect(second).toHaveLength(10)
+    // In-flight leases are subtracted from the cap: 10 − 5 leased = 5.
+    expect(second).toHaveLength(5)
+    // Once the leases have expired, the cap applies with nothing in flight.
+    const third = await claim(db, { nowMs: NOW + 121_000, perEndpointClaimCap: 10, batchSize: 30 })
+    expect(third).toHaveLength(10)
+  })
+
+  it('in-flight leases subtract from the cap; expired ones do not', async () => {
+    await seedWorkload(db.pool, { count: 6, endpointUrl: URL, nextAttemptAt: SEED_DUE })
+    const first = await claim(db, { perEndpointClaimCap: 5, batchSize: 2 })
+    expect(first).toHaveLength(2)
+    // In-flight leases subtract from the cap: with 2 leased, capacity is 3 —
+    // not the 4 rows still claimable.
+    const second = await claim(db, { perEndpointClaimCap: 5, batchSize: 10 })
+    expect(second).toHaveLength(3)
+    // After the leases expire they are not in flight anymore: all five
+    // leased rows are claimable again (still nothing recorded them), and at
+    // most the cap is taken.
+    const third = await claim(db, { nowMs: NOW + 121_000, perEndpointClaimCap: 5, batchSize: 10 })
+    expect(third).toHaveLength(5)
   })
 })
