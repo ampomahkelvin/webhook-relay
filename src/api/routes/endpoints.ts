@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express'
 import { z } from 'zod'
+import { createHash, randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
 import { AppError, parseBody } from '../errors.js'
 import { isUuid } from '../../util/uuid.js'
@@ -8,6 +9,7 @@ import {
   InvalidEndpointUrlError,
   validateEndpointUrl,
 } from '../../security/validate-endpoint-url.js'
+import { canonicalJson } from '../../util/canonical-json.js'
 import type { TenantContext } from '../../auth/tenant-auth.js'
 
 export interface EndpointRouterOptions {
@@ -243,7 +245,44 @@ export function endpointRouter(pool: Pool, options: EndpointRouterOptions): Rout
     res.status(204).end()
   })
 
-  // POST /v1/endpoints/:id/test arrives in phase 7, once dispatch exists.
+  // POST /v1/endpoints/:id/test — a `webhook.test` event fanned out to this
+  // endpoint only (DESIGN section 10), riding the normal dispatcher path:
+  // one event + one delivery in a single transaction, no side-channel send.
+  // A disabled endpoint gets nothing to receive (409).
+  router.post('/endpoints/:id/test', async (req: Request, res: Response) => {
+    const endpoint = await requireOwnedEndpoint(req)
+    if (endpoint.status === 'disabled') {
+      throw new AppError(409, 'ENDPOINT_DISABLED', 'Endpoint is disabled')
+    }
+
+    const idempotencyKey = `test-${randomUUID()}`
+    const requestHash = createHash('sha256').update(idempotencyKey, 'utf8').digest()
+    const payload = canonicalJson({
+      source: 'endpoint.test',
+      sentAt: new Date().toISOString(),
+    })
+
+    // Data-modifying CTEs so both rows commit together or neither does;
+    // the test event must never fan out into deliveries-less purgatory.
+    const result = await pool.query<{ event_id: string; delivery_id: string }>(
+      `WITH ev AS (
+         INSERT INTO events (tenant_id, event_type, payload, idempotency_key, request_hash)
+         VALUES ($1, 'webhook.test', $2::jsonb, $3, $4)
+         RETURNING id
+       ), del AS (
+         INSERT INTO deliveries (event_id, endpoint_id, next_attempt_at)
+         SELECT ev.id, $5::uuid, now() FROM ev
+         RETURNING id, event_id
+       )
+       SELECT (SELECT id FROM ev) AS event_id,
+              (SELECT id FROM del) AS delivery_id`,
+      [tenant(req).tenantId, payload, idempotencyKey, requestHash, endpoint.id],
+    )
+    const created = result.rows[0]
+    if (!created) throw new AppError(500, 'INTERNAL', 'Test event did not apply')
+
+    res.status(202).json({ id: created.event_id, deliveryId: created.delivery_id })
+  })
 
   return router
 }
