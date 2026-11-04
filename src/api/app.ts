@@ -50,6 +50,18 @@ export function createApp({
     pinoHttp({
       logger,
       genReqId: () => randomUUID(),
+      // Log hygiene (DESIGN section 9): pino-http otherwise carries raw
+      // request headers — including `Authorization: Bearer <key>` — into
+      // the log stream. Redact before anything hits disk.
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers["authorization"]',
+          // Opaque producer-chosen token: treat like a bearer key.
+          'req.headers["idempotency-key"]',
+        ],
+        censor: '[REDACTED]',
+      },
       autoLogging: {
         ignore: (req) => req.url === '/health' || (req.url?.startsWith('/metrics') ?? false),
       },
