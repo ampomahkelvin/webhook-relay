@@ -16,6 +16,7 @@
     "test": "vitest run",
     "api": "tsx src/api/index.ts",
     "dispatcher": "tsx src/dispatcher/index.ts",
+    "maintenance": "tsx src/maintenance/index.ts",
     "migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {

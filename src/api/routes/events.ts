@@ -6,10 +6,13 @@ import { AppError, parseBody } from '../errors.js'
 import { TokenBucket } from '../rate-limit.js'
 import { canonicalJson } from '../../util/canonical-json.js'
 import { isUuid } from '../../util/uuid.js'
+import type { Metrics } from '../../observability/metrics.js'
 
 export interface IntakeOptions {
   ratePerMinute: number
   burst: number
+  /** Optional observability hooks (DESIGN section 11). */
+  metrics?: Metrics
 }
 
 const MAX_PAYLOAD_BYTES = 256 * 1024
@@ -47,6 +50,7 @@ export function eventsRouter(pool: Pool, options: IntakeOptions): Router {
 
     const verdict = limiter.tryTake(context.tenantId)
     if (!verdict.allowed) {
+      options.metrics?.intakeRateLimited()
       throw new AppError(429, 'RATE_LIMITED', 'Too many events, slow down', {
         'Retry-After': String(verdict.retryAfterSeconds),
       })
@@ -105,6 +109,7 @@ export function eventsRouter(pool: Pool, options: IntakeOptions): Router {
     if (!row) throw new AppError(500, 'INTERNAL', 'Intake returned no result')
 
     if (row.new_event_id !== null) {
+      options.metrics?.eventReceived()
       res.status(202).json({ id: row.new_event_id, deliveries: Number(row.new_deliveries) })
       return
     }
@@ -152,6 +157,7 @@ export function eventsRouter(pool: Pool, options: IntakeOptions): Router {
       .status(202)
       .set('Idempotent-Replayed', 'true')
       .json({ id: replayId, deliveries: Number(resolved.replay_deliveries ?? 0) })
+    options.metrics?.eventReceived()
   })
 
   // GET /v1/events/:id — the event and its deliveries (tenant-scoped).

@@ -9,6 +9,7 @@ import {
 import { recordAttempt, type SendOutcome } from './record.js'
 import { sendDeliveryAttempt, type SendCallOptions } from './send.js'
 import { scheduleNext } from '../domain/retry-schedule.js'
+import type { Metrics } from '../observability/metrics.js'
 
 /**
  * The dispatcher loop (DESIGN sections 6.1–6.4):
@@ -61,7 +62,13 @@ export interface Dispatcher {
 
 type CapacityWaiter = () => void
 
-export function createDispatcher(pool: Pool, config: DispatcherConfig, logger: Logger): Dispatcher {
+export function createDispatcher(
+  pool: Pool,
+  config: DispatcherConfig,
+  logger: Logger,
+  /** Optional observability hooks (DESIGN section 11); runs fine without. */
+  metrics?: Metrics,
+): Dispatcher {
   const sleepFn = config.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
 
   let stopping = false
@@ -174,6 +181,9 @@ export function createDispatcher(pool: Pool, config: DispatcherConfig, logger: L
           { deliveryId: claimed.id, attempt: claimed.attemptNumber },
           'stale worker: result not applied',
         )
+      } else if (metrics) {
+        metrics.attemptDuration(sent.durationMs / 1_000)
+        metrics.deliveryOutcome(decided.outcome)
       }
     } catch (error) {
       // An unexpected error must not take the dispatcher down; retry per
