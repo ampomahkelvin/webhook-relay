@@ -1,8 +1,15 @@
 import { Router } from 'express'
 import type { Pool } from 'pg'
+import { fetchDbGauges } from '../observability/metrics.js'
 
-/** GET /health — liveness plus a database round-trip. */
-export function healthRouter(pool: Pool): Router {
+export interface DeepHealthOptions {
+  /** Dev-only unsafe flags the deep health route must report (DESIGN section 8). */
+  allowInsecureHttp?: boolean
+  allowPrivateTargets?: boolean
+}
+
+/** GET /health (liveness) and GET /health/deep (lag + unsafe-flag warnings). */
+export function healthRouter(pool: Pool, deep: DeepHealthOptions = {}): Router {
   const router = Router()
   router.get('/health', (_req, res) => {
     void (async () => {
@@ -18,6 +25,43 @@ export function healthRouter(pool: Pool): Router {
       }
     })()
   })
-  // /health/deep (delivery lag, unsafe config flags) arrives in phase 8.
+  router.use(deepHealth(pool, deep))
+  return router
+}
+
+/**
+ * GET /health/deep (DESIGN sections 10/11) — delivery lag and unsafe-flag
+ * warnings. Still 200 when only warnings are present: it probes DATABASE
+ * state for a human, not the scraper.
+ */
+export function deepHealth(pool: Pool, options: DeepHealthOptions): Router {
+  const router = Router()
+  router.get('/health/deep', (_req, res) => {
+    void (async () => {
+      try {
+        const gauges = await fetchDbGauges(pool)
+        const warnings: string[] = []
+        if (options.allowInsecureHttp) {
+          warnings.push('ALLOW_INSECURE_HTTP=true: plain-http receiver URLs are accepted')
+        }
+        if (options.allowPrivateTargets) {
+          warnings.push(
+            'ALLOW_PRIVATE_TARGETS=true: send-time IP-range checks are DISABLED — development only',
+          )
+        }
+        res.status(200).json({
+          status: warnings.length > 0 ? 'ok-unsafe-flags' : 'ok',
+          db: 'up',
+          pendingDeliveries: gauges.deliveriesPending,
+          oldestDueDeliveryAgeSeconds: gauges.oldestDueDeliveryAgeSeconds,
+          endpointsCircuitOpen: gauges.endpointsCircuitOpen,
+          warnings,
+          uptimeSeconds: Math.floor(process.uptime()),
+        })
+      } catch (error) {
+        res.status(503).json({ status: 'error', db: 'down', error: (error as Error).message })
+      }
+    })()
+  })
   return router
 }

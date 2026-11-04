@@ -1,0 +1,25 @@
+# Prometheus scrape configuration (DESIGN section 11).
+# One codebase, three processes; each exposes /metrics on its container's
+# PORT (3000 by default inside its own container).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: webhook-relay-api
+    static_configs:
+      - targets: ['api:3000']
+        labels:
+          process: api
+
+  - job_name: webhook-relay-dispatcher
+    static_configs:
+      - targets: ['dispatcher:3000']
+        labels:
+          process: dispatcher
+
+  - job_name: webhook-relay-maintenance
+    static_configs:
+      - targets: ['maintenance:3000']
+        labels:
+          process: maintenance

@@ -1,0 +1,13 @@
+# Grafana dashboard provisioning: everything under /var/lib/grafana/dashboards.
+apiVersion: 1
+
+providers:
+  - name: webhook-relay
+    orgId: 1
+    folder: Webhook Relay
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
