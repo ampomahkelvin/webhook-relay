@@ -498,3 +498,59 @@ Gauges are computed from the database (using the partial indexes) and cached for
 | Native enums for closed sets              | Lookup tables                           | Fewer joins, readable SQL                                                             |
 | One-level tenancy                         | Two-level                               | The extra layer adds surface without adding hard problems; documented migration path  |
 | Cap endpoints per tenant                  | Unbounded fan-out                       | Keeps intake a single bounded transaction                                             |
+
+---
+
+## 17. Hardening verification (experiments, phase 9)
+
+### 17.1 Tenant-isolation matrix
+
+`test/security/tenant-isolation.test.ts` drives two tenants (alice/bob) through the real HTTP
+app against a disposable database and asserts, for **every** route family: a foreign id reads
+as `404` (events, endpoints, deliveries), foreign writes (`replay`, `test`, `PATCH`, `DELETE`)
+are `404` and provably change nothing, a foreign scope in a listing filter yields an empty
+page, and the admin namespace rejects tenant keys and anonymity. The endpoint baseline is
+captured with a `GET` (the create response intentionally omits breaker state, which is
+`null` until first observed).
+
+### 17.2 Log hygiene
+
+`test/security/log-hygiene.test.ts` runs a full flow — tenant + key creation, endpoint with a
+server-generated secret, intake with sentinel values in the payload and `Idempotency-Key`, a
+signed delivery, a replay, listings, metrics, deep health — with pino sinks capturing
+**everything** both `api` and `dispatcher` log, then asserts no admin key, tenant API key,
+signing secret, idempotency key, or payload content appears anywhere in the captured stream.
+
+**Two real leaks were found (and fixed in `src/api/app.ts`):** pino-http logs the raw request
+headers, so `Authorization: Bearer <key>` and `Idempotency-Key` went to stdout verbatim on the
+request-completed line. Both are now redacted with a pino `redact` allow-list-style path list.
+Without the sentinel test the leak ships silently; the fix is the cheapest possible (two
+redaction paths, zero behavior change).
+
+### 17.3 Mutation experiments — results
+
+Each mutation is applied to a working copy, its targeted test is run, and the change is
+reverted. A mutation that does **not** fail its test is a diagnostic finding, recorded below.
+
+| #   | Mutation                                                   | Target test                                                       | Result                                                                                                                                                                                                                                                                                                                                                                     |
+| --- | ---------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Remove `SKIP LOCKED` + lease re-check from the claim       | `test/concurrency/dispatchers.test.ts`                            | **Killed** — 1 failure (two dispatchers double-claimed)                                                                                                                                                                                                                                                                                                                    |
+| 2   | Remove `attempt_count` fencing from the result update      | `test/integration/record-fencing.test.ts`                         | **Killed** — 2 failures (stale worker overwrote newer state)                                                                                                                                                                                                                                                                                                               |
+| 3   | No pinned IP (resolve again at connect time)               | `test/security/ssrf-client.test.ts`                               | **Killed** — 7 failures (rebound to a private address reached the socket)                                                                                                                                                                                                                                                                                                  |
+| 4   | Follow one redirect (re-requesting `Location`)             | `test/security/ssrf-client.test.ts`                               | **Killed** — 1 failure (redirect-refusal test; the mutated client hung on the private redirect target until its timeout — the test surfaced as its own slow failure)                                                                                                                                                                                                       |
+| 5   | Drop `UNIQUE (tenant_id, idempotency_key)` + `ON CONFLICT` | `test/integration/intake.test.ts`                                 | **Killed** — 3 failures (parallel same-key coalescing)                                                                                                                                                                                                                                                                                                                     |
+| 6   | Ignore `Retry-After` on 429/503                            | `test/unit/classify.test.ts`                                      | **Killed** — 2 failures                                                                                                                                                                                                                                                                                                                                                    |
+| 7   | Sign without the timestamp                                 | `test/unit/verification.test.ts` then `test/unit/signing.test.ts` | **Finding.** `verification.test.ts` (8 tests) does **not** fail: `verify` and `sign` share one code path, so its checks exercise header tolerance independently of what is signed. The spec known-answer vectors in `signing.test.ts` **do** fail (3 tests, including the Standard Webhooks vector) — the timestamp binding is covered, but only through external vectors. |
+| 8   | Sleep after every full batch (no immediate re-claim)       | `test/integration/loop.test.ts`                                   | **Killed** — 1 failure (the full-batch drain exceeded its bound by more than a poll interval; test took 10 s)                                                                                                                                                                                                                                                              |
+| 9   | Remove the per-endpoint claim cap                          | `test/integration/claim-lease.test.ts`                            | **Killed** — exactly the 2 per-endpoint capacity tests fail (over-claim within a batch; in-flight subtraction untestable with the cap at 999 999), the other 6 pass                                                                                                                                                                                                        |
+
+Two failed first attempts are kept in the record because they taught something: mutation 5's
+naive edit (deleting the constraint line while leaving the preceding comma) broke the SQL so
+the whole suite crashed at migration time — a mutation suite must verify it applies a valid
+program. Mutation 9's first edit removed the `(tenant_id, ...)` `$3` from the SQL but left it
+in the params array; Postgres rejected the query (`could not determine data type of parameter
+$3`) and all 8 tests failed for the wrong reason — the kill must be behavioral, so the param
+list was renumbered and re-run before counting it as killed.
+
+**Verdict: 8 of 9 killed; mutation 7 exposed an imprint coverage gap** that was closed by the
+independent known-answer vectors rather than by changing `verification.test.ts`'s contract.
