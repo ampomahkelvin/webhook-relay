@@ -26,6 +26,11 @@ services:
       ENCRYPTION_KEY: /nfxwkRb9px9u/baXe41g2X1qA/v6ADr22Cj1mfkJ1k=
       ADMIN_API_KEY: whkadmin_dev_only
       LOG_LEVEL: info
+      # The sample receiver lives on the Docker network (a private host),
+      # so the demo stack must opt into the unsafe flags. They are loudly
+      # reported by the processes and by /health/deep (DESIGN section 9).
+      ALLOW_INSECURE_HTTP: 'true'
+      ALLOW_PRIVATE_TARGETS: 'true'
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,5 +49,80 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  dispatcher:
+    build: .
+    command: ['node', 'dist/dispatcher/index.js']
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  maintenance:
+    build: .
+    command: ['node', 'dist/maintenance/index.js']
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  receiver:
+    build:
+      context: .
+      dockerfile: examples/receiver/Dockerfile
+    environment:
+      PORT: '9000'
+      # The demo initializer writes the server-generated signing secrets
+      # here after this container has started; the receiver re-reads the
+      # file on every delivery, so no restart is needed.
+      WEBHOOK_SECRET_FILE: /run/demo/secrets
+    volumes:
+      - demo-secrets:/run/demo
+    ports:
+      - '127.0.0.1:9000:9000'
+    restart: unless-stopped
+
+  demo-init:
+    build: .
+    # Needs to write the secret volume, which is created root-owned.
+    user: '0:0'
+    command: ['node', '/demo/init.mjs']
+    environment:
+      <<: *app-env
+      API_BASE_URL: http://api:3000
+    volumes:
+      - ./demo:/demo:ro
+      - demo-secrets:/run/demo
+      - ./demo:/out
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+    restart: 'no'
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - '127.0.0.1:9090:9090'
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - '3001:3000'
+
 volumes:
   pgdata:
+  demo-secrets:
