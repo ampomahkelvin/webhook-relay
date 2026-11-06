@@ -1,6 +1,9 @@
-import { loadConfig, ConfigError } from '../config/index.js'
-import { createLogger } from '../logger.js'
-import { createPool } from '../db/pool.js'
+import {
+  loadConfigOrExit,
+  createEntryPool,
+  createProcessLogger,
+  installSignalHandlers,
+} from '../process/bootstrap.js'
 import { runMaintenanceLoop } from './sweep.js'
 import { createMetricsApp } from '../observability/metrics-server.js'
 import { Metrics } from '../observability/metrics.js'
@@ -14,19 +17,9 @@ const SWEEP_INTERVAL_MS = 60_000
  * and `/metrics` on PORT for the scraper.
  */
 async function main(): Promise<void> {
-  let config
-  try {
-    config = loadConfig()
-  } catch (error) {
-    if (error instanceof ConfigError) {
-      console.error(error.message)
-      process.exit(2)
-    }
-    throw error
-  }
-  const logger = createLogger('maintenance', config.logLevel)
-  const pool = createPool(config.databaseUrl)
-  pool.on('error', (error) => logger.error({ err: error }, 'idle client error'))
+  const config = loadConfigOrExit()
+  const logger = createProcessLogger(config, 'maintenance')
+  const pool = createEntryPool(config, logger)
 
   const metrics = new Metrics()
   const app = createMetricsApp({ pool, metrics })
@@ -51,9 +44,14 @@ async function main(): Promise<void> {
         'maintenance sweep',
       )
     },
+    // A persistently failing sweep must be visible; errors never kill the
+    // process (the next tick retries), but they are not silent.
+    onError: (error) => {
+      logger.error({ err: (error as Error).message }, 'maintenance sweep failed')
+    },
   })
 
-  const shutdown = (signal: string) => {
+  installSignalHandlers((signal) => {
     logger.info({ signal }, 'shutting down')
     stopping = true
     void maintenance.then(() =>
@@ -61,9 +59,7 @@ async function main(): Promise<void> {
         void pool.end().then(() => process.exit(0))
       }),
     )
-  }
-  process.on('SIGTERM', () => shutdown('SIGTERM'))
-  process.on('SIGINT', () => shutdown('SIGINT'))
+  })
 }
 
 main().catch((error) => {

@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { SIGNING_SECRET_PREFIX } from '../domain/signing.js'
 
 const KEY_BYTES = 32
 const NONCE_BYTES = 12
@@ -50,5 +51,5 @@ export function decryptSecret(payload: Buffer, key: Buffer): string {
 
 /** `whsec_<base64 of 32 random bytes>` (DESIGN section 6.2). Shown once. */
 export function createSigningSecret(): string {
-  return `whsec_${randomBytes(32).toString('base64')}`
+  return `${SIGNING_SECRET_PREFIX}${randomBytes(32).toString('base64')}`
 }

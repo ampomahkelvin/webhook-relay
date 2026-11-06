@@ -38,8 +38,6 @@ export interface DispatcherConfig extends SendCallOptions {
   breakerCooldownSeconds: number
   /** Retry-schedule override for tests; defaults to the standard 7 delays. */
   delaysMs?: readonly number[]
-  /** Injectable sleeper for tests; defaults to setTimeout. */
-  sleep?: (ms: number) => Promise<void>
 }
 
 export interface DispatcherStats {
@@ -69,7 +67,7 @@ export function createDispatcher(
   /** Optional observability hooks (DESIGN section 11); runs fine without. */
   metrics?: Metrics,
 ): Dispatcher {
-  const sleepFn = config.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+  const sleepFn = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
   let stopping = false
   let claimFailureLogged = false
@@ -159,6 +157,12 @@ export function createDispatcher(
       }
       const sent = await sendDeliveryAttempt(details, config)
       stats.sends++
+      if (sent.internalError) {
+        logger.warn(
+          { deliveryId: claimed.id, reason: sent.internalError },
+          'attempt failed before reaching the wire',
+        )
+      }
 
       const decided = await decideOutcome(claimed, details, sent)
       const recorded = await recordAttempt(pool, {

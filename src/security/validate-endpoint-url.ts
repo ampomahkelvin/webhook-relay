@@ -1,5 +1,6 @@
 import { isIP } from 'node:net'
 import { isBlockedAddress } from './ip-blocklist.js'
+import { normalizeUrlHostname } from './hostname.js'
 
 export class InvalidEndpointUrlError extends Error {
   constructor(message: string) {
@@ -39,7 +40,7 @@ export function validateEndpointUrl(raw: string, options: EndpointUrlOptions = {
 
   const host = parsed.hostname
   // Node keeps brackets on IPv6 hostnames ('[::1]') and encodes zone ids as %25...
-  const stripped = (host.replace(/^\[/, '').replace(/\]$/, '').split('%')[0] ?? host).trim()
+  const stripped = normalizeUrlHostname(host)
   if (isIP(stripped) !== 0) {
     if (isBlockedAddress(stripped)) {
       throw new InvalidEndpointUrlError(`Literal IP '${host}' is in a blocked range`)
