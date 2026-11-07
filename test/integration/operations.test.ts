@@ -45,7 +45,10 @@ describe('operations API', () => {
   let counter = 0
 
   beforeAll(async () => {
-    env = await startTestApp({ maxEndpointsPerTenant: 10, allowInsecureHttp: true })
+    // Cap is high (and not under test here — endpoints.test.ts pins the
+    // limit behavior): every describe creates its own endpoint under the
+    // shared tenant, and the count must never gate a test.
+    env = await startTestApp({ maxEndpointsPerTenant: 20, allowInsecureHttp: true })
     const created: Tenant[] = []
     for (const name of ['alice-ops', 'bob-ops']) {
       const response = await request(env.app)
@@ -460,6 +463,33 @@ describe('operations API', () => {
         .post('/v1/endpoints/00000000-0000-4000-8000-000000000000/test')
         .set(bearerFor(alice))
       expect(unknown.status).toBe(404)
+    })
+
+    it('event detail renders deliveries in the shared list shape', async () => {
+      const endpointId = await createEndpoint(alice, mode.url)
+      mode.mode.behavior = 'ok'
+
+      const tested = await request(env.app)
+        .post(`/v1/endpoints/${endpointId}/test`)
+        .set(bearerFor(alice))
+      expect(tested.status).toBe(202)
+
+      const event = await request(env.app).get(`/v1/events/${tested.body.id}`).set(bearerFor(alice))
+      expect(event.status).toBe(200)
+      // A tenant event fans out to every enabled endpoint; pin the shape of
+      // THIS test's delivery, whatever its position in the list.
+      const mine = (event.body.deliveries as Array<Record<string, unknown>>).find(
+        (d) => d.endpointId === endpointId,
+      )
+      expect(mine).toBeDefined()
+      expect(mine).toMatchObject({
+        id: tested.body.deliveryId,
+        status: 'pending',
+        attemptCount: expect.any(Number),
+        cycleStart: expect.any(Number),
+        createdAt: expect.any(String),
+      })
+      expect(mine).toHaveProperty('nextAttemptAt')
     })
   })
 
