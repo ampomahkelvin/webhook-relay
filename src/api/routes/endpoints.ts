@@ -25,6 +25,8 @@ import {
   EVENT_TYPE_PATTERN,
   MAX_EVENT_TYPE_LENGTH,
   WILDCARD_EVENT_TYPE,
+  ENDPOINT_STATUSES,
+  type DisabledReason,
 } from '../../db/vocabulary.js'
 
 export interface EndpointRouterOptions {
@@ -55,7 +57,7 @@ const updateEndpointSchema = z
     url: z.string().min(1).max(2048).optional(),
     description: z.string().trim().min(1).max(500).nullable().optional(),
     eventTypes: z.array(eventTypeName).min(1).max(50).optional(),
-    status: z.enum(['enabled', 'disabled']).optional(),
+    status: z.enum(ENDPOINT_STATUSES).optional(),
   })
   .strict()
 
@@ -150,8 +152,10 @@ export function endpointRouter(pool: Pool, options: EndpointRouterOptions): Rout
     const current = await requireOwnedEndpoint(req)
     assertWildcardAlone(body.eventTypes ?? current.event_types)
 
-    // DB constraint: status='disabled' ⇔ disabled_reason IS NOT NULL.
-    const disabledReason =
+    // DB constraint: status='disabled' ⇔ disabled_reason IS NOT NULL, and
+    // the reason vocabulary is the one in db/vocabulary — 'manual' is the
+    // fallback for a tenant-disabled endpoint that had no prior reason.
+    const disabledReason: DisabledReason | null =
       (body.status ?? current.status) === 'disabled' ? (current.disabled_reason ?? 'manual') : null
 
     const row = await updateEndpoint(pool, {

@@ -1,4 +1,5 @@
 import type { Pool } from 'pg'
+import { fetchQueueGauges, type QueueGauges } from '../db/deliveries.js'
 
 /**
  * Prometheus text-format metrics with NO client library (DESIGN section
@@ -16,49 +17,8 @@ const GAUGE_CACHE_MS = 5_000
 
 const HISTOGRAM_BUCKETS = [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
 
-export interface DbGauges {
-  deliveriesPending: number
-  /** Age of the most overdue claimable delivery; 0 when none. */
-  oldestDueDeliveryAgeSeconds: number
-  /** Endpoints whose breaker is not closed. */
-  endpointsCircuitOpen: number
-}
-
-/**
- * One round trip over the partial indexes (DESIGN section 11).
- *
- * `oldestDue` counts only deliveries a worker could claim right now
- * minus the facts only the dispatcher process knows: leased rows are
- * excluded (data-derived), but circuit/cooldown state is NOT folded in —
- * the api process must not need dispatcher configuration to render its
- * gauges, so the gauge is an upper bound on claimable backlog.
- */
-export async function fetchDbGauges(pool: Pool): Promise<DbGauges> {
-  const result = await pool.query<{
-    pending: string
-    oldest_due: string
-    circuit_open: string
-  }>(
-    `SELECT
-       (SELECT count(*) FROM deliveries WHERE status = 'pending')::text AS pending,
-       (SELECT count(*) FROM endpoints WHERE circuit_state <> 'closed')::text AS circuit_open,
-       COALESCE(
-         (SELECT EXTRACT(EPOCH FROM now() - MIN(d.next_attempt_at))
-          FROM deliveries d
-          JOIN endpoints e ON e.id = d.endpoint_id
-          WHERE d.status = 'pending' AND d.next_attempt_at <= now()
-            AND d.locked_until IS NULL
-            AND e.status = 'enabled'),
-         0
-       )::text AS oldest_due`,
-  )
-  const row = result.rows[0]!
-  return {
-    deliveriesPending: Number(row.pending),
-    oldestDueDeliveryAgeSeconds: Math.floor(Number(row.oldest_due)),
-    endpointsCircuitOpen: Number(row.circuit_open),
-  }
-}
+/** Queue-gauge type alias for the Prometheus rendering layer below. */
+export type DbGauges = QueueGauges
 
 const escapeLabelValue = (value: string): string =>
   value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\n')
@@ -178,7 +138,7 @@ export class Metrics {
     if (pool) {
       const age = this.now() - (this.cached?.at ?? 0)
       if (this.cached === null || age > GAUGE_CACHE_MS) {
-        this.cached = { at: this.now(), gauges: await fetchDbGauges(pool) }
+        this.cached = { at: this.now(), gauges: await fetchQueueGauges(pool) }
       }
       const { deliveriesPending, oldestDueDeliveryAgeSeconds, endpointsCircuitOpen } =
         this.cached.gauges

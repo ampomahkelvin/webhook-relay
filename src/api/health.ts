@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import type { Pool } from 'pg'
-import { fetchDbGauges } from '../observability/metrics.js'
+import { fetchQueueGauges } from '../db/deliveries.js'
 import { healthHandler } from '../observability/control-routes.js'
 
 export interface DeepHealthOptions {
@@ -27,7 +27,7 @@ function deepHealth(pool: Pool, options: DeepHealthOptions): Router {
   router.get('/health/deep', (_req, res) => {
     void (async () => {
       try {
-        const gauges = await fetchDbGauges(pool)
+        const gauges = await fetchQueueGauges(pool)
         const warnings: string[] = []
         if (options.allowInsecureHttp) {
           warnings.push('ALLOW_INSECURE_HTTP=true: plain-http receiver URLs are accepted')

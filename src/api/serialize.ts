@@ -1,42 +1,17 @@
-import type {
-  CircuitState,
-  DeliveryStatus,
-  DisabledReason,
-  EndpointStatus,
-} from '../db/vocabulary.js'
+import type { CircuitState, DisabledReason, EndpointStatus } from '../db/vocabulary.js'
+import type { EndpointRow } from '../db/endpoints.js'
+import type { AttemptRow, DeliveryRow } from '../db/deliveries.js'
+import type { EventRow } from '../db/events.js'
+import type { ApiKeyRow, TenantRow } from '../db/tenants.js'
 
 /**
  * The wire shapes every tenant-facing route maps through. One entity, one
  * mapper: a response field change happens here (and in tests that pin the
- * shape), never per route.
+ * shape), never per route. The row types are the data modules' own — a
+ * column rename starts with a compile error here, not a wire drift.
  */
 
-export interface EndpointRowShape {
-  id: string
-  url: string
-  description: string | null
-  event_types: string[]
-  status: EndpointStatus
-  disabled_reason: DisabledReason | null
-  circuit_state: CircuitState
-  created_at: Date
-  updated_at: Date
-}
-
-export interface DeliveryRowShape {
-  id: string
-  event_id: string
-  endpoint_id: string
-  status: DeliveryStatus
-  attempt_count: number
-  cycle_start: number
-  next_attempt_at: Date
-  locked_until: Date | null
-  completed_at: Date | null
-  created_at: Date
-}
-
-export function endpointJson(row: EndpointRowShape): {
+export function endpointJson(row: EndpointRow): {
   id: string
   url: string
   description: string | null
@@ -60,7 +35,7 @@ export function endpointJson(row: EndpointRowShape): {
   }
 }
 
-export function deliveryJson(row: DeliveryRowShape) {
+export function deliveryJson(row: DeliveryRow) {
   return {
     id: row.id,
     eventId: row.event_id,
@@ -75,15 +50,7 @@ export function deliveryJson(row: DeliveryRowShape) {
   }
 }
 
-export interface EventRowShape {
-  id: string
-  event_type: string
-  payload: unknown
-  idempotency_key: string
-  created_at: Date
-}
-
-export function eventJson(row: EventRowShape) {
+export function eventJson(row: EventRow) {
   return {
     id: row.id,
     eventType: row.event_type,
@@ -93,16 +60,7 @@ export function eventJson(row: EventRowShape) {
   }
 }
 
-export interface AttemptRowShape {
-  attempt_number: number
-  started_at: Date
-  duration_ms: number
-  status_code: number | null
-  error_kind: string | null
-  response_snippet: string | null
-}
-
-export function attemptJson(row: AttemptRowShape) {
+export function attemptJson(row: AttemptRow) {
   return {
     attemptNumber: row.attempt_number,
     startedAt: row.started_at.toISOString(),
@@ -113,24 +71,11 @@ export function attemptJson(row: AttemptRowShape) {
   }
 }
 
-export interface TenantRowShape {
-  id: string
-  name: string
-  created_at: Date
-}
-
-export function tenantJson(row: TenantRowShape) {
+export function tenantJson(row: TenantRow) {
   return { id: row.id, name: row.name, createdAt: row.created_at.toISOString() }
 }
 
-export interface ApiKeyRowShape {
-  id: string
-  key_prefix: string
-  created_at: Date
-  revoked_at: Date | null
-}
-
-export function apiKeyJson(row: ApiKeyRowShape) {
+export function apiKeyJson(row: ApiKeyRow) {
   return {
     id: row.id,
     prefix: row.key_prefix,

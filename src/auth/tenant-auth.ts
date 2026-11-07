@@ -4,6 +4,7 @@ import { AppError } from '../api/errors.js'
 import { hashApiKey } from './api-keys.js'
 import { bearerToken } from './bearer.js'
 import type { AuthMiddleware } from './bearer.js'
+import { findTenantByKeyHash } from '../db/tenants.js'
 
 export interface TenantContext {
   tenantId: string
@@ -29,22 +30,11 @@ export function requireTenantAuth(pool: Pool): AuthMiddleware {
       if (token === undefined) {
         throw new AppError(401, 'UNAUTHORIZED', 'Missing bearer token')
       }
-      const result = await pool.query<{
-        tenant_id: string
-        name: string
-      }>(
-        `SELECT k.tenant_id, t.name
-         FROM api_keys k
-         JOIN tenants t ON t.id = k.tenant_id
-         WHERE k.key_hash = $1 AND k.revoked_at IS NULL
-         LIMIT 1`,
-        [hashApiKey(token)],
-      )
-      const row = result.rows[0]
-      if (!row) {
+      const tenant = await findTenantByKeyHash(pool, hashApiKey(token))
+      if (!tenant) {
         throw new AppError(401, 'UNAUTHORIZED', 'Invalid or revoked API key')
       }
-      req.tenant = { tenantId: row.tenant_id, tenantName: row.name }
+      req.tenant = { tenantId: tenant.id, tenantName: tenant.name }
       next()
     } catch (error) {
       next(error)

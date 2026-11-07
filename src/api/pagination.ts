@@ -39,11 +39,6 @@ export function decodeCursor(cursor: string | undefined): CursorParts | null {
   }
 }
 
-/** The two query parameters the keyset clause always binds, in order. */
-export function cursorParams(cursor: CursorParts | null): Array<string | null> {
-  return [cursor?.createdAt ?? null, cursor?.id ?? null]
-}
-
 interface PageRow {
   created_at: Date
   id: string
