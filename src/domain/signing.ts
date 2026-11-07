@@ -8,6 +8,13 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 
 export const SIGNATURE_VERSION = 'v1'
 
+/**
+ * The prefix on a user-facing signing secret (`whsec_<base32/base64…>`);
+ * the signing spec owns it so its producer (secret minting) and its
+ * receiver-side decoder below agree without a DESIGN-paragraph reference.
+ */
+export const SIGNING_SECRET_PREFIX = 'whsec_'
+
 export class InvalidSigningSecretError extends Error {
   constructor(message: string) {
     super(message)
@@ -38,7 +45,9 @@ export function signWebhook(
  * something.
  */
 export function decodeSigningSecret(secret: string): Buffer {
-  const raw = secret.startsWith('whsec_') ? secret.slice('whsec_'.length) : secret
+  const raw = secret.startsWith(SIGNING_SECRET_PREFIX)
+    ? secret.slice(SIGNING_SECRET_PREFIX.length)
+    : secret
   if (raw.length === 0) {
     throw new InvalidSigningSecretError('signing secret is empty')
   }

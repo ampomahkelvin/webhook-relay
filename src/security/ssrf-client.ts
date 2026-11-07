@@ -5,6 +5,7 @@ import { type LookupFunction } from 'node:net'
 import { promisify } from 'node:util'
 import { isIP } from 'node:net'
 import { isBlockedAddress } from './ip-blocklist.js'
+import { normalizeUrlHostname } from './hostname.js'
 
 /**
  * The SSRF-safe outbound client. It sends to URLs tenants registered, so
@@ -30,8 +31,8 @@ export interface ResolvedAddress {
   family: 4 | 6
 }
 
-export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
-export const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
+const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
 export const DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024
 
 export type ClientErrorKind = 'timeout' | 'connection' | 'dns' | 'tls' | 'blocked_address'
@@ -51,13 +52,10 @@ export type SendResult =
 
 export interface SsrfSendOptions {
   url: string
-  method?: string
   headers: Record<string, string>
   body: Buffer
   /** Whole-attempt budget, default 10 s. */
   requestTimeoutMs?: number
-  /** No response headers within this budget fails the attempt, default 5 s. */
-  connectTimeoutMs?: number
   /** Read cap, default 64 KB. */
   maxResponseBytes?: number
   /** Trust-anchor override, for tests against self-signed servers only. */
@@ -103,10 +101,7 @@ function failureKind(error: NodeJS.ErrnoException): ClientErrorKind {
 
 export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<SendResult> {
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
-  const connectTimeoutMs = Math.min(
-    options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
-    requestTimeoutMs,
-  )
+  const connectTimeoutMs = Math.min(DEFAULT_CONNECT_TIMEOUT_MS, requestTimeoutMs)
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES
 
   // A URL that fails here is an endpoint-configuration problem, not an
@@ -118,7 +113,7 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
   }
 
   const rawHostname = targetUrl.hostname
-  const hostname = rawHostname.replace(/^\[/, '').replace(/\]$/, '').split('%')[0] ?? rawHostname
+  const hostname = normalizeUrlHostname(rawHostname)
   const port = targetUrl.port === '' ? (isTls ? 443 : 80) : Number(targetUrl.port)
   const path = `${targetUrl.pathname}${targetUrl.search}` || '/'
 
@@ -214,7 +209,7 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
           host: hostname,
           port,
           path,
-          method: options.method ?? 'POST',
+          method: 'POST',
           headers: options.headers,
           agent,
           lookup: pinnedLookup,
@@ -227,7 +222,7 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
           host: hostname,
           port,
           path,
-          method: options.method ?? 'POST',
+          method: 'POST',
           headers: options.headers,
           agent,
           lookup: pinnedLookup,

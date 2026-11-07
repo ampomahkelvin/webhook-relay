@@ -112,6 +112,28 @@ describe('endpoint creation', () => {
     expect(longDescription.status).toBe(400)
   })
 
+  it('strictly rejects unknown POST fields and pins the create-time breaker state', async () => {
+    const tenant = await createTenant('ep-strict')
+
+    // POST is strict like PATCH: a typo'd field (a silently-ignored
+    // setting is how drift starts) never creates half an endpoint.
+    const strict = await createEndpoint(tenant, {
+      url: HTTPS_OK,
+      eventTypes: ['invoice.paid'],
+      circuitState: 'open', // breaker state is not settable by tenants
+    })
+    expect(strict.status).toBe(400)
+    expect((strict.body as { code?: string }).code).toBe('VALIDATION_ERROR')
+
+    const created = await createEndpoint(tenant, {
+      url: HTTPS_OK,
+      eventTypes: ['invoice.paid'],
+    })
+    expect(created.status).toBe(201)
+    // Create and GET share one row mapper — the breaker starts closed.
+    expect((created.body.endpoint as { circuitState?: string }).circuitState).toBe('closed')
+  })
+
   it('rejects unsafe URLs (SSRF layer 1)', async () => {
     const tenant = await createTenant('ep-ssrf')
 

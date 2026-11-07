@@ -1,8 +1,8 @@
 /**
  * Attempt-result classifier (DESIGN section 6.3). Pure: turns "what did the
  * wire give us" into "what happens to this delivery next". The retry
- * schedule, jitter, and the dead cutoff are the dispatcher's side (Phase 5);
- * this file only decides the outcome.
+ * schedule, jitter, and the dead cutoff are the dispatcher's side
+ * (`src/domain/retry-schedule.ts`); this file only decides the outcome.
  */
 
 export const RETRY_AFTER_CAP_SECONDS = 3600

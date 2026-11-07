@@ -8,6 +8,9 @@ import { buildOutboundRequest } from '../domain/outbound-request.js'
 import { classifyAttempt, type AttemptOutcome, type HttpLikeHeaders } from '../domain/classify.js'
 import type { DeliveryDetails } from './claim.js'
 
+/** Cap of the stored response snippet (DESIGN: at most 1 KB). */
+const MAX_SNIPPET_BYTES = 1024
+
 /**
  * One attempt: build, sign, send through the SSR-safe client, classify
  * (DESIGN section 6.2 + 6.3). This does not touch the database — the
@@ -18,11 +21,8 @@ import type { DeliveryDetails } from './claim.js'
 export interface SendCallOptions {
   encryptionKeyBase64: string
   requestTimeoutMs: number
-  maxResponseBytes?: number
-  maxSnippetBytes?: number
   allowInsecureHttp: boolean
   allowPrivateTargets: boolean
-  nowMs?: number
 }
 
 export interface AttemptSent {
@@ -33,6 +33,13 @@ export interface AttemptSent {
   snippet?: Buffer
   startedAtMs: number
   durationMs: number
+  /**
+   * The build/sign/decrypt failure message when the attempt died before
+   * reaching the wire. Recorded for the logs — it must not be swallowed,
+   * but it is not a wire error kind, so the classifier still sees
+   * 'connection'.
+   */
+  internalError?: string
 }
 
 export async function sendDeliveryAttempt(
@@ -47,6 +54,7 @@ export async function sendDeliveryAttempt(
     snippet?: Buffer
   }
   let response: WireResult
+  let internalError: string | undefined
 
   try {
     const secret = decryptSecret(
@@ -68,7 +76,7 @@ export async function sendDeliveryAttempt(
       headers: request.headers,
       body: request.body,
       requestTimeoutMs: options.requestTimeoutMs,
-      maxResponseBytes: options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+      maxResponseBytes: DEFAULT_MAX_RESPONSE_BYTES,
       allowPrivateTargets: options.allowPrivateTargets,
     })
 
@@ -76,15 +84,17 @@ export async function sendDeliveryAttempt(
       response = {
         statusCode: result.statusCode,
         headers: result.headers,
-        snippet: result.snippet.subarray(0, options.maxSnippetBytes ?? 1024),
+        snippet: result.snippet.subarray(0, MAX_SNIPPET_BYTES),
       }
     } else {
       response = { kind: result.kind }
     }
-  } catch {
+  } catch (error) {
     // Endpoint-configuration problems (invalid URL, bad secret) fail the
-    // attempt like a transport error and are retried on the schedule.
+    // attempt like a transport error and are retried on the schedule —
+    // but with the reason visible instead of collapsed into the kind.
     response = { kind: 'connection' }
+    internalError = (error as Error).message
   }
 
   const durationMs = Date.now() - startedAtMs
@@ -100,5 +110,6 @@ export async function sendDeliveryAttempt(
     snippet: response.snippet,
     startedAtMs,
     durationMs,
+    internalError,
   }
 }

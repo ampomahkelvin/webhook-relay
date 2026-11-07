@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import type { Pool } from 'pg'
-import { fetchDbGauges } from '../observability/metrics.js'
+import { fetchQueueGauges } from '../db/deliveries.js'
+import { healthHandler } from '../observability/control-routes.js'
 
 export interface DeepHealthOptions {
   /** Dev-only unsafe flags the deep health route must report (DESIGN section 8). */
@@ -11,20 +12,7 @@ export interface DeepHealthOptions {
 /** GET /health (liveness) and GET /health/deep (lag + unsafe-flag warnings). */
 export function healthRouter(pool: Pool, deep: DeepHealthOptions = {}): Router {
   const router = Router()
-  router.get('/health', (_req, res) => {
-    void (async () => {
-      try {
-        await pool.query('SELECT 1')
-        res.status(200).json({
-          status: 'ok',
-          db: 'up',
-          uptimeSeconds: Math.floor(process.uptime()),
-        })
-      } catch {
-        res.status(503).json({ status: 'error', db: 'down' })
-      }
-    })()
-  })
+  router.get('/health', healthHandler(pool))
   router.use(deepHealth(pool, deep))
   return router
 }
@@ -34,12 +22,12 @@ export function healthRouter(pool: Pool, deep: DeepHealthOptions = {}): Router {
  * warnings. Still 200 when only warnings are present: it probes DATABASE
  * state for a human, not the scraper.
  */
-export function deepHealth(pool: Pool, options: DeepHealthOptions): Router {
+function deepHealth(pool: Pool, options: DeepHealthOptions): Router {
   const router = Router()
   router.get('/health/deep', (_req, res) => {
     void (async () => {
       try {
-        const gauges = await fetchDbGauges(pool)
+        const gauges = await fetchQueueGauges(pool)
         const warnings: string[] = []
         if (options.allowInsecureHttp) {
           warnings.push('ALLOW_INSECURE_HTTP=true: plain-http receiver URLs are accepted')
