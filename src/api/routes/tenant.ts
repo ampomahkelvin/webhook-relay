@@ -29,11 +29,13 @@ export function tenantRouter(pool: Pool, options: TenantRouterOptions): Router {
       encryptionKey: options.encryptionKey,
     }),
   )
-  router.use(eventsRouter(pool, {
-    ratePerMinute: options.ratePerMinute,
-    burst: options.burst,
-    metrics: options.metrics,
-  }))
+  router.use(
+    eventsRouter(pool, {
+      ratePerMinute: options.ratePerMinute,
+      burst: options.burst,
+      metrics: options.metrics,
+    }),
+  )
   router.use(deliveriesRouter(pool))
 
   return router

@@ -24,9 +24,7 @@ export interface EventRow {
  * exact formula.
  */
 export function requestHash(eventType: string, payload: unknown): Buffer {
-  return createHash('sha256')
-    .update(canonicalJson({ eventType, payload }), 'utf8')
-    .digest()
+  return createHash('sha256').update(canonicalJson({ eventType, payload }), 'utf8').digest()
 }
 
 export interface EventReplay {
@@ -111,7 +109,11 @@ export async function resolveReplay(
   )
   const found = result.rows[0]
   if (!found) return null
-  return { eventId: found.id, deliveries: Number(found.deliveries), requestHash: found.request_hash }
+  return {
+    eventId: found.id,
+    deliveries: Number(found.deliveries),
+    requestHash: found.request_hash,
+  }
 }
 
 /** An event is scoped by its own tenant_id; deliveries follow it. */

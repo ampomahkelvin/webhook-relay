@@ -12,12 +12,7 @@ import {
   MAX_EVENT_TYPE_LENGTH,
   MAX_PAYLOAD_BYTES,
 } from '../../db/vocabulary.js'
-import {
-  getEvent,
-  requestHash,
-  resolveReplay,
-  submitIntake,
-} from '../../db/events.js'
+import { getEvent, requestHash, resolveReplay, submitIntake } from '../../db/events.js'
 import { listDeliveriesForEvent } from '../../db/deliveries.js'
 import { deliveryJson, eventJson } from '../serialize.js'
 
@@ -69,11 +64,7 @@ export function eventsRouter(pool: Pool, options: IntakeOptions): Router {
     const body = parseBody(intakeSchema, req.body)
     const payloadJson = canonicalJson(body.payload)
     if (Buffer.byteLength(payloadJson, 'utf8') > MAX_PAYLOAD_BYTES) {
-      throw new AppError(
-        413,
-        'PAYLOAD_TOO_LARGE',
-        `payload exceeds ${MAX_PAYLOAD_BYTES / 1024} KB`,
-      )
+      throw new AppError(413, 'PAYLOAD_TOO_LARGE', `payload exceeds ${MAX_PAYLOAD_BYTES / 1024} KB`)
     }
 
     const { result } = await submitIntake(pool, {
@@ -119,10 +110,13 @@ export function eventsRouter(pool: Pool, options: IntakeOptions): Router {
         'This Idempotency-Key was used with a different request',
       )
     }
-    res.status(202).set('Idempotent-Replayed', 'true').json({
-      id: replayId,
-      deliveries: Number(resolved.replay_deliveries ?? 0),
-    })
+    res
+      .status(202)
+      .set('Idempotent-Replayed', 'true')
+      .json({
+        id: replayId,
+        deliveries: Number(resolved.replay_deliveries ?? 0),
+      })
     options.metrics?.eventReceived()
   })
 

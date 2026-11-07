@@ -21,7 +21,11 @@ import {
   updateEndpoint,
 } from '../../db/endpoints.js'
 import { insertEventWithSingleDelivery } from '../../db/events.js'
-import { EVENT_TYPE_PATTERN, MAX_EVENT_TYPE_LENGTH, WILDCARD_EVENT_TYPE } from '../../db/vocabulary.js'
+import {
+  EVENT_TYPE_PATTERN,
+  MAX_EVENT_TYPE_LENGTH,
+  WILDCARD_EVENT_TYPE,
+} from '../../db/vocabulary.js'
 
 export interface EndpointRouterOptions {
   maxEndpointsPerTenant: number
@@ -34,10 +38,9 @@ export interface EndpointRouterOptions {
 const eventTypeName = z
   .string()
   .max(MAX_EVENT_TYPE_LENGTH)
-  .refine(
-    (value) => value === WILDCARD_EVENT_TYPE || EVENT_TYPE_PATTERN.test(value),
-    { message: "must be '*' or a lowercase a-z/0-9/. _ - name" },
-  )
+  .refine((value) => value === WILDCARD_EVENT_TYPE || EVENT_TYPE_PATTERN.test(value), {
+    message: "must be '*' or a lowercase a-z/0-9/. _ - name",
+  })
 
 const createEndpointSchema = z
   .object({
@@ -148,9 +151,8 @@ export function endpointRouter(pool: Pool, options: EndpointRouterOptions): Rout
     assertWildcardAlone(body.eventTypes ?? current.event_types)
 
     // DB constraint: status='disabled' ⇔ disabled_reason IS NOT NULL.
-    const disabledReason = (body.status ?? current.status) === 'disabled'
-      ? current.disabled_reason ?? 'manual'
-      : null
+    const disabledReason =
+      (body.status ?? current.status) === 'disabled' ? (current.disabled_reason ?? 'manual') : null
 
     const row = await updateEndpoint(pool, {
       tenantId: requireTenantContext(req).tenantId,

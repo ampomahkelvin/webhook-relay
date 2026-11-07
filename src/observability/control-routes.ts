@@ -12,9 +12,7 @@ import type { Metrics } from './metrics.js'
  */
 
 /** Liveness: 200 with uptime while a `SELECT 1` round-trips, 503 otherwise. */
-export function healthHandler(
-  pool: Pool,
-): (req: Request, res: Response) => void {
+export function healthHandler(pool: Pool): (req: Request, res: Response) => void {
   return (_req, res) => {
     void (async () => {
       try {

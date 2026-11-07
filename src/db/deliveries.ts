@@ -44,7 +44,12 @@ export interface ListDeliveriesFilters {
 
 export async function listDeliveryPage(
   pool: Pool,
-  args: { tenantId: string; cursor?: { createdAt: string; id: string } | null; limit: number; filters?: ListDeliveriesFilters },
+  args: {
+    tenantId: string
+    cursor?: { createdAt: string; id: string } | null
+    limit: number
+    filters?: ListDeliveriesFilters
+  },
 ): Promise<DeliveryRow[]> {
   const { endpointId, status, eventId } = args.filters ?? {}
   const result = await pool.query<DeliveryRow>(
@@ -119,7 +124,10 @@ interface DeliveryStateShape {
 }
 
 /** Read a delivery's settle state without owning it (why a replay was refused). */
-async function findDeliveryState(pool: Pool, args: { deliveryId: string; tenantId: string }): Promise<DeliveryStateShape | null> {
+async function findDeliveryState(
+  pool: Pool,
+  args: { deliveryId: string; tenantId: string },
+): Promise<DeliveryStateShape | null> {
   const result = await pool.query<DeliveryStateShape>(
     `SELECT d.status::text AS status, d.locked_until
      FROM deliveries d
@@ -139,8 +147,7 @@ async function findDeliveryState(pool: Pool, args: { deliveryId: string; tenantI
  * leased or pending delivery returns as refused, not replayed.
  */
 export type ReplayOutcome =
-  | { ok: true; delivery: DeliveryRow }
-  | { ok: false; state: DeliveryStateShape | null }
+  { ok: true; delivery: DeliveryRow } | { ok: false; state: DeliveryStateShape | null }
 
 export async function replayDelivery(
   pool: Pool,

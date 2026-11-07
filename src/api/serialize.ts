@@ -1,4 +1,9 @@
-import type { CircuitState, DeliveryStatus, DisabledReason, EndpointStatus } from '../db/vocabulary.js'
+import type {
+  CircuitState,
+  DeliveryStatus,
+  DisabledReason,
+  EndpointStatus,
+} from '../db/vocabulary.js'
 
 /**
  * The wire shapes every tenant-facing route maps through. One entity, one

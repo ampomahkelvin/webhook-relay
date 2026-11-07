@@ -25,7 +25,9 @@ import type { Metrics } from '../observability/metrics.js'
  *    bounded by the request timeout), then resolve.
  *
  * The breaker application (consecutive-failure counters, half-open probe)
- * is Phase 6; this loop drives the delivery lifecycle only.
+ * lives in the claim and record statements (`src/dispatcher/claim.ts`,
+ * `src/dispatcher/record.ts`, `src/domain/breaker.ts`); this loop drives
+ * the delivery lifecycle only.
  */
 
 export interface DispatcherConfig extends SendCallOptions {

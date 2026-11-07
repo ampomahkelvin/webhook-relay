@@ -24,7 +24,15 @@ export interface DbGauges {
   endpointsCircuitOpen: number
 }
 
-/** One round trip over the partial indexes (DESIGN section 11). */
+/**
+ * One round trip over the partial indexes (DESIGN section 11).
+ *
+ * `oldestDue` counts only deliveries a worker could claim right now
+ * minus the facts only the dispatcher process knows: leased rows are
+ * excluded (data-derived), but circuit/cooldown state is NOT folded in —
+ * the api process must not need dispatcher configuration to render its
+ * gauges, so the gauge is an upper bound on claimable backlog.
+ */
 export async function fetchDbGauges(pool: Pool): Promise<DbGauges> {
   const result = await pool.query<{
     pending: string
@@ -39,6 +47,7 @@ export async function fetchDbGauges(pool: Pool): Promise<DbGauges> {
           FROM deliveries d
           JOIN endpoints e ON e.id = d.endpoint_id
           WHERE d.status = 'pending' AND d.next_attempt_at <= now()
+            AND d.locked_until IS NULL
             AND e.status = 'enabled'),
          0
        )::text AS oldest_due`,

@@ -6,13 +6,8 @@ import { decodeCursor, listQuerySchema, paginate } from '../pagination.js'
 import { attemptJson, deliveryJson } from '../serialize.js'
 import { requireTenantContext } from '../../auth/tenant-auth.js'
 import { isUuid } from '../../util/uuid.js'
-import {
-  getDelivery,
-  listAttempts,
-  listDeliveryPage,
-  replayDelivery,
-} from '../../db/deliveries.js'
-import { DELIVERY_STATUSES, type DeliveryStatus } from '../../db/vocabulary.js'
+import { getDelivery, listAttempts, listDeliveryPage, replayDelivery } from '../../db/deliveries.js'
+import { DELIVERY_STATUSES } from '../../db/vocabulary.js'
 
 /**
  * Delivery operations (DESIGN section 10): the tenant-facing read side of

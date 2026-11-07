@@ -7,7 +7,10 @@ import type { ApiKeyRowShape, TenantRowShape } from '../api/serialize.js'
  * `src/auth/api-keys.ts`; this module persists and lists rows only.
  */
 
-export { type ApiKeyRowShape as ApiKeyRow, type TenantRowShape as TenantRow } from '../api/serialize.js'
+export {
+  type ApiKeyRowShape as ApiKeyRow,
+  type TenantRowShape as TenantRow,
+} from '../api/serialize.js'
 
 /** Anything that can run a query: the pool or a transaction's client. */
 type Queryable = Pick<PoolClient, 'query'>
