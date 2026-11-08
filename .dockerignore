@@ -5,7 +5,8 @@ coverage
 Dockerfile
 .dockerignore
 test
-examples
+examples/*
+!examples/receiver/server.ts
 k6
 grafana
 *.md

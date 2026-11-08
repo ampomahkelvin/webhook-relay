@@ -9,6 +9,8 @@ import { healthRouter } from './health.js'
 import { adminRouter } from './routes/admin.js'
 import { tenantRouter } from './routes/tenant.js'
 import { Metrics } from '../observability/metrics.js'
+import { metricsHandler } from '../observability/control-routes.js'
+import { BODY_LIMIT_BYTES } from '../db/vocabulary.js'
 import type { TenantContext } from '../auth/tenant-auth.js'
 
 declare module 'express-serve-static-core' {
@@ -26,7 +28,7 @@ export interface AppOptions {
   allowInsecureHttp: boolean
   encryptionKey: string
   intake: { ratePerMinute: number; burst: number }
-  /** Observability hooks; a fresh empty registry is used when omitted. */
+  /** Observability hooks; a fresh empty registry is the sanctioned test default. */
   metrics?: Metrics
   /** Dispatcher-side unsafe flag reported by /health/deep. */
   allowPrivateTargets?: boolean
@@ -67,8 +69,10 @@ export function createApp({
       },
     }),
   )
-  // 300 KB: 256 KB payload plus envelope headroom; tightened in phase 3.
-  app.use(express.json({ limit: '300kb' }))
+  // The body envelope must fit the payload budget plus JSON overhead;
+  // both numbers live in the vocabulary so intake's 413 can never disagree
+  // with what the parser accepted.
+  app.use(express.json({ limit: Math.floor(BODY_LIMIT_BYTES / 1024) + 'kb' }))
 
   app.use(
     healthRouter(pool, {
@@ -78,15 +82,7 @@ export function createApp({
   )
 
   // GET /metrics — Prometheus exposition with the queue gauges (DESIGN 11).
-  app.get('/metrics', (_req, res) => {
-    void (async () => {
-      try {
-        res.type('text/plain; charset=utf-8').send(await metrics.render(pool))
-      } catch (error) {
-        res.status(503).send(`# scrape failed: ${(error as Error).message}\n`)
-      }
-    })()
-  })
+  app.get('/metrics', metricsHandler(pool, metrics))
 
   app.use('/admin', adminRouter({ pool, adminApiKey }))
   app.use(
@@ -95,7 +91,8 @@ export function createApp({
       maxEndpointsPerTenant,
       allowInsecureHttp,
       encryptionKey,
-      intake,
+      ratePerMinute: intake.ratePerMinute,
+      burst: intake.burst,
       metrics,
     }),
   )

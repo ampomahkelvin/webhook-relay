@@ -103,23 +103,23 @@ export async function runMaintenanceSweep(pool: Pool, options: SweepOptions): Pr
 export interface MaintenanceLoopOptions extends SweepOptions {
   /** Sweep interval; every cycle re-competes for the advisory lock. */
   intervalMs: number
-  /** Injectable sleeper for tests. */
-  sleep?: (ms: number) => Promise<void>
   /** Injectable stop signal. */
   shouldStop?: () => boolean
   onSweep?: (result: SweepResult) => void
+  /** Called with every sweep failure so an entrypoint can log it. */
+  onError?: (error: unknown) => void
 }
 
 /**
  * The maintenance loop for the entrypoint: sweep immediately (so a fresh
  * instance works at once), then every interval. Errors never kill the
- * process — the next tick retries.
+ * process — the next tick retries — and each failure goes to `onError`.
  */
 export async function runMaintenanceLoop(
   pool: Pool,
   options: MaintenanceLoopOptions,
 ): Promise<void> {
-  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
   const shouldStop = options.shouldStop ?? (() => false)
 
   for (;;) {
@@ -129,8 +129,8 @@ export async function runMaintenanceLoop(
       if (result.swept) {
         options.onSweep?.(result)
       }
-    } catch {
-      // Logged by the entrypoint's caller context; never kill the process.
+    } catch (error) {
+      options.onError?.(error)
     }
     const deadline = Date.now() + options.intervalMs
     for (;;) {

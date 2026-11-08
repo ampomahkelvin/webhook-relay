@@ -18,7 +18,7 @@ export const STANDARD_RETRY_DELAYS_MS = [
 ] as const
 
 export const MAX_ATTEMPTS_PER_CYCLE = 8
-export const JITTER = 0.2
+const JITTER = 0.2
 
 export type RetryOutcome = 'retry' | 'dead'
 

@@ -1,15 +1,17 @@
-import { loadConfig } from '../config/index.js'
-import { createPool } from '../db/pool.js'
+import {
+  loadConfigOrExit,
+  createEntryPool,
+  createProcessLogger,
+  installSignalHandlers,
+} from '../process/bootstrap.js'
 import { createApp } from './app.js'
-import { createLogger } from '../logger.js'
 import { Metrics } from '../observability/metrics.js'
 
 async function main(): Promise<void> {
-  const config = loadConfig()
-  const logger = createLogger('api', config.logLevel)
+  const config = loadConfigOrExit()
+  const logger = createProcessLogger(config, 'api')
 
-  const pool = createPool(config.databaseUrl)
-  pool.on('error', (error) => logger.error({ err: error }, 'idle client error'))
+  const pool = createEntryPool(config, logger)
 
   const app = createApp({
     pool,
@@ -26,14 +28,12 @@ async function main(): Promise<void> {
     logger.info({ port: config.port }, 'api listening')
   })
 
-  const shutdown = (signal: string) => {
+  installSignalHandlers((signal) => {
     logger.info({ signal }, 'shutting down')
     server.close(() => {
       void pool.end().then(() => process.exit(0))
     })
-  }
-  process.on('SIGTERM', () => shutdown('SIGTERM'))
-  process.on('SIGINT', () => shutdown('SIGINT'))
+  })
 }
 
 main().catch((error) => {

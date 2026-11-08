@@ -1,6 +1,11 @@
 import express, { type Request, type Response, type Express } from 'express'
-import { verifyWebhook } from '../../src/domain/verification.js'
+import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
+import {
+  verifyWebhook,
+  type VerifyResult,
+  type WebhookVerifyInput,
+} from '../../src/domain/verification.js'
 
 /**
  * Reference receiver (DESIGN section 13): the pattern any endpoint should
@@ -21,6 +26,13 @@ import { pathToFileURL } from 'node:url'
 export interface ReceiverOptions {
   secret: string
   toleranceSeconds: number
+  /**
+   * Extra secrets also accepted (Standard Webhooks-style rotation overlap).
+   * `WEBHOOK_SECRET_FILE` supplies more at runtime: the demo initializer
+   * writes the server-generated endpoint secrets there AFTER this process
+   * has already started, so the file is re-read on every delivery.
+   */
+  additionalSecrets?: string[]
 }
 
 export interface ReceivedWebhook {
@@ -57,6 +69,48 @@ export function createReceiverApp(options: ReceiverOptions): {
   received: Map<string, ReceivedWebhook>
 } {
   const received = new Map<string, ReceivedWebhook>()
+
+  /**
+   * Verify against every known secret (the startup secret(s) plus whatever
+   * `WEBHOOK_SECRET_FILE` currently holds, one per line). The file is
+   * re-read per request so secret rotation, or the demo bootstrap writing
+   * the server-generated signing secret after start-up, needs no restart.
+   * Timestamp checks are secret-independent, so one matching secret is
+   * enough.
+   */
+  function verifyWithAnySecret(input: Omit<WebhookVerifyInput, 'secret'>): VerifyResult {
+    const secrets = readSecrets()
+    for (const secret of secrets) {
+      const verdict = verifyWebhook({ ...input, secret })
+      if (verdict.valid) return verdict
+    }
+    // Report the failure of the last secret tried (same shape as a
+    // single-secret receiver would).
+    const last = secrets[secrets.length - 1]
+    return last === undefined
+      ? { valid: false, reason: 'missing_webhook_id' }
+      : verifyWebhook({ ...input, secret: last })
+  }
+
+  function readSecrets(): string[] {
+    const secrets = new Set<string>()
+    const file = process.env['WEBHOOK_SECRET_FILE']
+    if (file) {
+      try {
+        for (const line of readFileSync(file, 'utf8').split('\n')) {
+          const trimmed = line.trim()
+          if (trimmed.length > 0) secrets.add(trimmed)
+        }
+      } catch {
+        // The file may not exist yet (bootstrap order); fall through.
+      }
+    }
+    for (const secret of [options.secret, ...(options.additionalSecrets ?? [])]) {
+      secrets.add(secret)
+    }
+    return [...secrets]
+  }
+
   const app = express()
   app.disable('x-powered-by')
 
@@ -80,12 +134,11 @@ export function createReceiverApp(options: ReceiverOptions): {
       return
     }
 
-    const verdict = verifyWebhook({
+    const verdict = verifyWithAnySecret({
       body: req.body as Buffer,
       webhookId: req.get('webhook-id'),
       webhookTimestamp: req.get('webhook-timestamp'),
       webhookSignature: req.get('webhook-signature'),
-      secret: options.secret,
       toleranceSeconds: options.toleranceSeconds,
     })
     if (!verdict.valid) {

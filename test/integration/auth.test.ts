@@ -171,6 +171,26 @@ describe('tenant authentication', () => {
     expect(missing.status).toBe(404)
   })
 
+  it('names the failing path parameter on revoke', async () => {
+    const tenant = await admin().post('/admin/tenants').set(bearer(TEST_ADMIN_KEY)).send({
+      name: 'param-co',
+    })
+    const tenantId = tenant.body.tenant.id as string
+
+    // A malformed key id is the key route's fault, not the tenant's.
+    const badKeyFormat = await admin()
+      .post(`/admin/tenants/${tenantId}/api-keys/not-a-uuid/revoke`)
+      .set(bearer(TEST_ADMIN_KEY))
+    expect(badKeyFormat.status).toBe(404)
+    expect(badKeyFormat.body.message).toBe('API key not found')
+
+    const badTenant = await admin()
+      .post('/admin/tenants/not-a-uuid/api-keys/00000000-0000-4000-8000-000000000000/revoke')
+      .set(bearer(TEST_ADMIN_KEY))
+    expect(badTenant.status).toBe(404)
+    expect(badTenant.body.message).toBe('Tenant not found')
+  })
+
   it('lists keys with prefixes only, never the secret', async () => {
     const created = await admin()
       .post('/admin/tenants')
