@@ -8,7 +8,7 @@ import {
 } from '../helpers/test-app.js'
 import { createApp } from '../../src/api/app.js'
 import { createLogger } from '../../src/logger.js'
-import { decryptSecret } from '../../src/security/crypto.js'
+import { decryptSecret } from '../../src/infra/secret-box.js'
 
 let env: TestApp
 /** Same database, but an endpoint cap high enough for the pagination tests. */

@@ -5,13 +5,10 @@ import type { Pool } from 'pg'
 import { AppError, parseBody } from '../errors.js'
 import { decodeCursor, listQuerySchema, paginate } from '../pagination.js'
 import { endpointJson } from '../serialize.js'
-import { requireTenantContext } from '../../auth/tenant-auth.js'
+import { requireTenantContext } from '../auth/tenant-auth.js'
 import { isUuid } from '../../util/uuid.js'
-import { createSigningSecret, encryptSecret } from '../../security/crypto.js'
-import {
-  InvalidEndpointUrlError,
-  validateEndpointUrl,
-} from '../../security/validate-endpoint-url.js'
+import { createSigningSecret, encryptSecret } from '../../infra/secret-box.js'
+import { InvalidEndpointUrlError, validateEndpointUrl } from '../../domain/endpoint-url.js'
 import { canonicalJson } from '../../util/canonical-json.js'
 import {
   createEndpoint,
@@ -27,7 +24,7 @@ import {
   WILDCARD_EVENT_TYPE,
   ENDPOINT_STATUSES,
   type DisabledReason,
-} from '../../db/vocabulary.js'
+} from '../../domain/vocabulary.js'
 
 export interface EndpointRouterOptions {
   maxEndpointsPerTenant: number

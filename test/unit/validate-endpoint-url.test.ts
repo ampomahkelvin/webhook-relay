@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateEndpointUrl } from '../../src/security/validate-endpoint-url.js'
+import { validateEndpointUrl } from '../../src/domain/endpoint-url.js'
 
 describe('validateEndpointUrl (layer 1)', () => {
   it('accepts normal HTTPS URLs', () => {

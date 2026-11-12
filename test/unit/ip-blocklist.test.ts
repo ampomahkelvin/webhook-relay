@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isBlockedAddress } from '../../src/security/ip-blocklist.js'
+import { isBlockedAddress } from '../../src/domain/ip-blocklist.js'
 
 const FREE = 'not blocked'
 const BLOCK = 'blocked'

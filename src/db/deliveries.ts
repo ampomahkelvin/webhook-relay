@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { DeliveryStatus } from './vocabulary.js'
+import type { DeliveryStatus } from '../domain/vocabulary.js'
 
 /**
  * The `deliveries` table's queries and row shape (DESIGN sections 5/7/10).

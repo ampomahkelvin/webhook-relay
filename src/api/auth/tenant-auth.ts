@@ -1,10 +1,10 @@
 import type { Pool } from 'pg'
 import type { NextFunction, Request, Response } from 'express'
-import { AppError } from '../api/errors.js'
-import { hashApiKey } from './api-keys.js'
+import { AppError } from '../../domain/errors.js'
+import { hashApiKey } from '../../domain/api-keys.js'
 import { bearerToken } from './bearer.js'
 import type { AuthMiddleware } from './bearer.js'
-import { findTenantByKeyHash } from '../db/tenants.js'
+import { findTenantByKeyHash } from '../../db/tenants.js'
 
 export interface TenantContext {
   tenantId: string

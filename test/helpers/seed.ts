@@ -3,7 +3,7 @@ import {
   createSigningSecret,
   decodeEncryptionKey,
   encryptSecret,
-} from '../../src/security/crypto.js'
+} from '../../src/infra/secret-box.js'
 import { TEST_ENCRYPTION_KEY } from './test-app.js'
 
 /** Seed helpers: build real tenants/endpoints/events/deliveries directly. */

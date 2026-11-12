@@ -6,12 +6,12 @@ import { TokenBucket } from '../rate-limit.js'
 import { canonicalJson } from '../../util/canonical-json.js'
 import { isUuid } from '../../util/uuid.js'
 import type { Metrics } from '../../observability/metrics.js'
-import { requireTenantContext } from '../../auth/tenant-auth.js'
+import { requireTenantContext } from '../auth/tenant-auth.js'
 import {
   EVENT_TYPE_PATTERN,
   MAX_EVENT_TYPE_LENGTH,
   MAX_PAYLOAD_BYTES,
-} from '../../db/vocabulary.js'
+} from '../../domain/vocabulary.js'
 import { getEvent, requestHash, resolveReplay, submitIntake } from '../../db/events.js'
 import { listDeliveriesForEvent } from '../../db/deliveries.js'
 import { deliveryJson, eventJson } from '../serialize.js'

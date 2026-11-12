@@ -1,18 +1,8 @@
 import type { NextFunction, Request, Response } from 'express'
 import type { Logger } from '../logger.js'
 
-/** Typed error with the exact `{ code, message }` API shape. */
-export class AppError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-    readonly headers: Record<string, string> = {},
-  ) {
-    super(message)
-    this.name = 'AppError'
-  }
-}
+import { AppError } from '../domain/errors.js'
+export { AppError } from '../domain/errors.js'
 
 /** Validate a request body against a Zod schema, or throw 400. */
 export function parseBody<T>(

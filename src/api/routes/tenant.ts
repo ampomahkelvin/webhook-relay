@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import type { Pool } from 'pg'
-import { requireTenantAuth } from '../../auth/tenant-auth.js'
+import { requireTenantAuth } from '../auth/tenant-auth.js'
 import { endpointRouter, type EndpointRouterOptions } from './endpoints.js'
 import { eventsRouter, type IntakeOptions } from './events.js'
 import { deliveriesRouter } from './deliveries.js'

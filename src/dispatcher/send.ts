@@ -1,9 +1,9 @@
-import { decodeEncryptionKey, decryptSecret } from '../security/crypto.js'
+import { decodeEncryptionKey, decryptSecret } from '../infra/secret-box.js'
 import {
   sendThroughSsrfClient,
   DEFAULT_MAX_RESPONSE_BYTES,
   type SendResult,
-} from '../security/ssrf-client.js'
+} from '../infra/ssrf-client.js'
 import { buildOutboundRequest } from '../domain/outbound-request.js'
 import { classifyAttempt, type AttemptOutcome, type HttpLikeHeaders } from '../domain/classify.js'
 import type { DeliveryDetails } from './claim.js'

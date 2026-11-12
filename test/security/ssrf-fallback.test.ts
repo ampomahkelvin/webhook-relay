@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { sendThroughSsrfClient, type ResolvedAddress } from '../../src/security/ssrf-client.js'
+import { sendThroughSsrfClient, type ResolvedAddress } from '../../src/infra/ssrf-client.js'
 
 /**
  * I4: DNS and address-fallback behavior of the SSRF client, over real

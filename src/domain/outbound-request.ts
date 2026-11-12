@@ -1,5 +1,5 @@
 import { signWebhook } from './signing.js'
-import { validateEndpointUrl } from '../security/validate-endpoint-url.js'
+import { validateEndpointUrl } from './endpoint-url.js'
 import { canonicalJson } from '../util/canonical-json.js'
 
 /**

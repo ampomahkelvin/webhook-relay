@@ -4,8 +4,8 @@ import { lookup as systemLookup } from 'node:dns'
 import { type LookupFunction } from 'node:net'
 import { promisify } from 'node:util'
 import { isIP } from 'node:net'
-import { isBlockedAddress } from './ip-blocklist.js'
-import { normalizeUrlHostname } from './hostname.js'
+import { isBlockedAddress } from '../domain/ip-blocklist.js'
+import { normalizeUrlHostname } from '../domain/hostname.js'
 
 /**
  * The SSRF-safe outbound client. It sends to URLs tenants registered, so

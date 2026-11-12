@@ -2,8 +2,8 @@ import { Router } from 'express'
 import { z } from 'zod'
 import type { Pool } from 'pg'
 import { AppError, parseBody } from '../errors.js'
-import { generateApiKey } from '../../auth/api-keys.js'
-import { requireAdminKey } from '../../auth/admin-auth.js'
+import { generateApiKey } from '../../domain/api-keys.js'
+import { requireAdminKey } from '../auth/admin-auth.js'
 import { isUuid } from '../../util/uuid.js'
 import {
   createTenant,
