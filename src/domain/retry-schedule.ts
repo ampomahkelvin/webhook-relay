@@ -35,15 +35,14 @@ export interface ScheduleInput {
   delaysMs?: readonly number[]
 }
 
-export interface ScheduleDecision {
-  outcome: RetryOutcome
-  /** Set when `outcome === 'dead'`. */
-  reason?: 'schedule_exhausted'
-  /** Set when `outcome === 'retry'`.
-   *  Always at least now + jittered delay; never earlier than a Retry-After. */
-  nextAttemptAtMs?: number
-  delayMs?: number
-}
+export type ScheduleDecision =
+  | { outcome: 'dead'; reason: 'schedule_exhausted' }
+  | {
+      outcome: 'retry'
+      /** Always at least now + jittered delay; never earlier than a Retry-After. */
+      nextAttemptAtMs: number
+      delayMs: number
+    }
 
 function jittered(delayMs: number, rng: () => number): number {
   const factor = 1 + (2 * rng() - 1) * JITTER // uniform in [0.8, 1.2)

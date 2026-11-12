@@ -94,7 +94,7 @@ describe('recordAttempt', () => {
     const result = await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
-      outcome: 'succeeded',
+      outcome: { kind: 'succeeded' },
       startedAtMs: T(0),
       durationMs: 140,
       statusCode: 200,
@@ -119,8 +119,7 @@ describe('recordAttempt', () => {
     const result = await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
-      outcome: 'retry',
-      nextAttemptAtMs: T(5 * 60_000),
+      outcome: { kind: 'retry', nextAttemptAtMs: T(5 * 60_000) },
       startedAtMs: T(0),
       durationMs: 250,
       statusCode: 500,
@@ -143,7 +142,7 @@ describe('recordAttempt', () => {
     const result = await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
-      outcome: 'dead',
+      outcome: { kind: 'dead', reason: 'schedule_exhausted' },
       startedAtMs: T(0),
       durationMs: 90,
       statusCode: 410,
@@ -162,7 +161,7 @@ describe('recordAttempt', () => {
     await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
-      outcome: 'succeeded',
+      outcome: { kind: 'succeeded' },
       startedAtMs: T(0),
       durationMs: 10,
       statusCode: 200,
@@ -179,8 +178,7 @@ describe('recordAttempt', () => {
       await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
-        outcome: 'retry',
-        nextAttemptAtMs: T(60_000),
+        outcome: { kind: 'retry', nextAttemptAtMs: T(60_000) },
         startedAtMs: T(0),
         durationMs: 5,
         statusCode: 503,
@@ -206,7 +204,7 @@ describe('recordAttempt', () => {
       const result = await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
-        outcome: 'succeeded',
+        outcome: { kind: 'succeeded' },
         startedAtMs: T(30_000),
         durationMs: 60,
         statusCode: 200,
@@ -229,7 +227,7 @@ describe('recordAttempt', () => {
       const fresh = await rec(workload, {
         deliveryId: id,
         claimedAttempt: 2,
-        outcome: 'succeeded',
+        outcome: { kind: 'succeeded' },
         startedAtMs: T(40_000),
         durationMs: 30,
         statusCode: 204,
@@ -244,7 +242,7 @@ describe('recordAttempt', () => {
       await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
-        outcome: 'succeeded',
+        outcome: { kind: 'succeeded' },
         startedAtMs: T(0),
         durationMs: 5,
         statusCode: 200,
@@ -253,8 +251,7 @@ describe('recordAttempt', () => {
       const again = await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
-        outcome: 'retry',
-        nextAttemptAtMs: T(120_000),
+        outcome: { kind: 'retry', nextAttemptAtMs: T(120_000) },
         startedAtMs: T(10),
         durationMs: 5,
         statusCode: 500,

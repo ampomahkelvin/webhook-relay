@@ -241,7 +241,16 @@ export async function fetchDeliveryDetails(
  *    to decide the transition, so they hold the row lock briefly.
  */
 
-export type SendOutcome = 'succeeded' | 'dead' | 'retry'
+/**
+ * The outcome a worker records, as a discriminated union: `'succeeded'`,
+ * a `'retry'` with its next claim time, or `'dead'` with the reason
+ * (`'gone'` drives the endpoint auto-disable, `'schedule_exhausted'` does
+ * not).
+ */
+export type RecordOutcome =
+  | { kind: 'succeeded' }
+  | { kind: 'retry'; nextAttemptAtMs: number }
+  | { kind: 'dead'; reason: 'gone' | 'schedule_exhausted' }
 
 export interface RecordParams {
   deliveryId: string
@@ -249,11 +258,7 @@ export interface RecordParams {
   endpointId: string
   /** The `attempt_count` this worker claimed; the fencing token. */
   claimedAttempt: number
-  outcome: SendOutcome
-  /** Why an outcome is `dead`; drives the `gone` endpoint auto-disable. */
-  deadReason?: 'gone' | 'schedule_exhausted'
-  /** Next claim time for retries; ignored otherwise. */
-  nextAttemptAtMs?: number
+  outcome: RecordOutcome
   startedAtMs: number
   durationMs: number
   statusCode?: number
@@ -283,8 +288,6 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
     endpointId,
     claimedAttempt,
     outcome,
-    deadReason,
-    nextAttemptAtMs,
     startedAtMs,
     durationMs,
     statusCode,
@@ -314,12 +317,11 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
       ],
     )
 
-    const isPending = outcome === 'retry'
     // 'retry' is a dispatcher-side outcome; the delivery stays 'pending'
     // until it goes to the endpoint again. `next_attempt_at` is NOT NULL,
     // so terminal outcomes keep the last value (the due index only reads
     // pending rows, so the stale value is harmless).
-    const status = isPending ? 'pending' : outcome
+    const status = outcome.kind === 'retry' ? 'pending' : outcome.kind
     const deliveryUpdate = await client.query(
       `UPDATE deliveries
        SET status = $2::delivery_status,
@@ -332,8 +334,8 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
       [
         deliveryId,
         status,
-        isPending ? new Date(nextAttemptAtMs ?? 0) : new Date(nowMs),
-        isPending ? null : new Date(nowMs),
+        outcome.kind === 'retry' ? new Date(outcome.nextAttemptAtMs) : new Date(nowMs),
+        outcome.kind === 'retry' ? null : new Date(nowMs),
         claimedAttempt,
       ],
     )
@@ -342,7 +344,7 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
       return { applied: false, stale: true }
     }
 
-    if (outcome === 'succeeded') {
+    if (outcome.kind === 'succeeded') {
       // I1 — the write-amplification rule as ONE statement: it touches
       // nothing when the endpoint is already healthy, and a non-matching
       // WHERE takes no row lock, so concurrent completions for the same
@@ -377,7 +379,7 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
       }
     }
 
-    if (deadReason === 'gone') {
+    if (outcome.kind === 'dead' && outcome.reason === 'gone') {
       // 410: the receiver said this webhook destination is gone for good.
       // Disable once; pending deliveries of it stay pending until the
       // expiry sweep or human re-enable.

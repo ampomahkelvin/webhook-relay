@@ -36,8 +36,7 @@ const failed = (db: TestDatabase, args: FailArgs) =>
     endpointId: args.endpointId,
     claimedAttempt: args.claimedAttempt,
     breakerThreshold: args.threshold ?? 3,
-    outcome: 'retry',
-    nextAttemptAtMs: T0 + args.claimedAttempt * 2_000, // due 2 s later; claims stagger to match
+    outcome: { kind: 'retry', nextAttemptAtMs: T0 + args.claimedAttempt * 2_000 }, // due 2 s later; claims stagger to match
     startedAtMs: T0,
     durationMs: 25,
     statusCode: 500,
@@ -50,7 +49,7 @@ export const succeededAttempt = (db: TestDatabase, args: FailArgs) =>
     endpointId: args.endpointId,
     claimedAttempt: args.claimedAttempt,
     breakerThreshold: args.threshold ?? 3,
-    outcome: 'succeeded',
+    outcome: { kind: 'succeeded' },
     startedAtMs: T0,
     durationMs: 25,
     statusCode: 200,
