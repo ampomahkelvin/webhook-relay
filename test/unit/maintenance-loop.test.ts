@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Pool } from 'pg'
-import { runMaintenanceLoop } from '../../src/maintenance/sweep.js'
+import { runMaintenanceLoop } from '../../src/maintenance/loop.js'
 
 /**
  * I7 regression: the between-sweeps sleep used to be one uninterruptible

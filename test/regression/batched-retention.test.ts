@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Pool } from 'pg'
-import { runMaintenanceSweep, type SweepOptions } from '../../src/maintenance/sweep.js'
+import { runMaintenanceSweep, type SweepOptions } from '../../src/db/maintenance.js'
 import { startTestDatabase, type TestDatabase } from '../helpers/test-db.js'
 import { seedWorkload, type SeedWorkload } from '../helpers/seed.js'
 

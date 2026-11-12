@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Pool } from 'pg'
-import { recordAttempt, type RecordParams } from '../../src/dispatcher/record.js'
+import { recordAttempt, type RecordParams } from '../../src/db/delivery-queue.js'
 import { startTestDatabase, type TestDatabase } from '../helpers/test-db.js'
 import { seedWorkload, type SeedWorkload } from '../helpers/seed.js'
 

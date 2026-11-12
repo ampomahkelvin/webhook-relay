@@ -3,10 +3,11 @@ import type { Pool } from '../db/pool.js'
 import {
   claimDueDeliveries,
   fetchDeliveryDetails,
+  recordAttempt,
   type ClaimedDelivery,
   type DeliveryDetails,
-} from './claim.js'
-import { recordAttempt, type SendOutcome } from './record.js'
+  type SendOutcome,
+} from '../db/delivery-queue.js'
 import { sendDeliveryAttempt, type SendCallOptions } from './send.js'
 import { scheduleNext } from '../domain/retry-schedule.js'
 import type { Metrics } from '../observability/metrics.js'
@@ -25,8 +26,7 @@ import type { Metrics } from '../observability/metrics.js'
  *    bounded by the request timeout), then resolve.
  *
  * The breaker application (consecutive-failure counters, half-open probe)
- * lives in the claim and record statements (`src/dispatcher/claim.ts`,
- * `src/dispatcher/record.ts`, `src/domain/breaker.ts`); this loop drives
+ * lives in `src/db/delivery-queue.ts` and `src/domain/breaker.ts`; this loop drives
  * the delivery lifecycle only.
  */
 

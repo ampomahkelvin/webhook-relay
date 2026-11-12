@@ -6,7 +6,7 @@ import {
 } from '../infra/ssrf-client.js'
 import { buildOutboundRequest } from '../domain/outbound-request.js'
 import { classifyAttempt, type AttemptOutcome, type HttpLikeHeaders } from '../domain/classify.js'
-import type { DeliveryDetails } from './claim.js'
+import type { DeliveryDetails } from '../db/delivery-queue.js'
 
 /** Cap of the stored response snippet (DESIGN: at most 1 KB). */
 const MAX_SNIPPET_BYTES = 1024

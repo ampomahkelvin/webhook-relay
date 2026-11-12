@@ -5,7 +5,7 @@ import {
   installSignalHandlers,
   armHardExit,
 } from '../process/bootstrap.js'
-import { runMaintenanceLoop } from './sweep.js'
+import { runMaintenanceLoop } from './loop.js'
 import { createMetricsApp } from '../observability/metrics-server.js'
 import { Metrics } from '../observability/metrics.js'
 

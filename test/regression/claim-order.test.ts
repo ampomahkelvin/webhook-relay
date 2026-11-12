@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { claimDueDeliveries } from '../../src/dispatcher/claim.js'
+import { claimDueDeliveries } from '../../src/db/delivery-queue.js'
 import { startTestDatabase, type TestDatabase } from '../helpers/test-db.js'
 import { seedWorkload, type SeedWorkload } from '../helpers/seed.js'
 
