@@ -35,7 +35,7 @@ Requires Docker (and that's it).
 docker compose up --build
 ```
 
-`docker compose up` starts **everything**: Postgres (host port `5433`), migrations, `api` (`3000`), `dispatcher`, `maintenance`, the sample receiver (`9000`), `demo-init`, plus Prometheus (`9090`) and Grafana (`3001`, login `admin/admin`, dashboard `Webhook Relay`).
+`docker compose up` starts **everything**: Postgres (host port `5433`), migrations, `api` (`3000`), `dispatcher`, `maintenance`, the sample receiver (`9000`), `demo-init`, plus Prometheus (`9090`) and Grafana (`3001`, login `admin` / `webhook_demo_only`, dashboard `Webhook Relay`). The api, receiver, Prometheus and Grafana ports are bound to `127.0.0.1` — the demo stack runs with dev-only credentials and unsafe flags, so nothing it exposes should answer on a shared network.
 
 The stack opts into the dev-only flags (`ALLOW_INSECURE_HTTP`, `ALLOW_PRIVATE_TARGETS`) because the sample receiver lives on the Docker network — a private host the production defaults correctly refuse. The processes log a loud warning either way and `/health/deep` reports the flags.
 

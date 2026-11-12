@@ -1,4 +1,5 @@
 import type { Pool } from 'pg'
+import { setTimeout as abortableSleep } from 'node:timers/promises'
 
 /**
  * Maintenance operations (DESIGN sections 3/7):
@@ -105,6 +106,12 @@ export interface MaintenanceLoopOptions extends SweepOptions {
   intervalMs: number
   /** Injectable stop signal. */
   shouldStop?: () => boolean
+  /**
+   * Abort signal for the between-sweeps sleep (I7): without it a stop
+   * request waits out a full interval (up to a minute) before the loop
+   * notices; with it the sleep wakes immediately.
+   */
+  signal?: AbortSignal
   onSweep?: (result: SweepResult) => void
   /** Called with every sweep failure so an entrypoint can log it. */
   onError?: (error: unknown) => void
@@ -119,11 +126,29 @@ export async function runMaintenanceLoop(
   pool: Pool,
   options: MaintenanceLoopOptions,
 ): Promise<void> {
-  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
   const shouldStop = options.shouldStop ?? (() => false)
+  const { signal } = options
+
+  const sleep = async (ms: number): Promise<void> => {
+    if (signal !== undefined) {
+      try {
+        await abortableSleep(ms, undefined, { signal })
+      } catch {
+        // Aborted: the stop check below ends the loop.
+      }
+      return
+    }
+    // No signal: slice the sleep so a shouldStop predicate is honored
+    // within the slice, not after a whole interval.
+    const sliceMs = Math.min(ms, 250)
+    for (let waited = 0; waited < ms; waited += sliceMs) {
+      await new Promise<void>((resolve) => setTimeout(resolve, sliceMs))
+      if (shouldStop()) return
+    }
+  }
 
   for (;;) {
-    if (shouldStop()) return
+    if (shouldStop() || signal?.aborted === true) return
     try {
       const result = await runMaintenanceSweep(pool, options)
       if (result.swept) {
@@ -132,12 +157,6 @@ export async function runMaintenanceLoop(
     } catch (error) {
       options.onError?.(error)
     }
-    const deadline = Date.now() + options.intervalMs
-    for (;;) {
-      if (shouldStop()) return
-      const now = Date.now()
-      if (now >= deadline) break
-      await sleep(Math.min(options.intervalMs, deadline - now))
-    }
+    await sleep(options.intervalMs)
   }
 }

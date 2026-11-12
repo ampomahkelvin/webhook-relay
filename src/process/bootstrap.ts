@@ -46,3 +46,19 @@ export function installSignalHandlers(handler: (signal: 'SIGTERM' | 'SIGINT') =>
     process.on(signal, () => handler(signal))
   }
 }
+
+/**
+ * Arm the shutdown deadline (I7): graceful shutdown must not be able to
+ * hang forever (a slow drain, a stuck close) — Docker sends SIGKILL after
+ * its stop grace period anyway, so past this timer the process leaves
+ * itself. Unref'd, so arming it never keeps a healthy process alive.
+ * Clear the returned timer once cleanup has finished.
+ */
+export function armHardExit(logger: Logger, ms = 25_000): NodeJS.Timeout {
+  const timer = setTimeout(() => {
+    logger.error({ afterMs: ms }, 'graceful shutdown exceeded its deadline; exiting')
+    process.exit(0)
+  }, ms)
+  timer.unref()
+  return timer
+}

@@ -3,6 +3,7 @@ import {
   createEntryPool,
   createProcessLogger,
   installSignalHandlers,
+  armHardExit,
 } from '../process/bootstrap.js'
 import { createApp } from './app.js'
 import { Metrics } from '../observability/metrics.js'
@@ -30,7 +31,9 @@ async function main(): Promise<void> {
 
   installSignalHandlers((signal) => {
     logger.info({ signal }, 'shutting down')
+    const hardExit = armHardExit(logger)
     server.close(() => {
+      clearTimeout(hardExit)
       void pool.end().then(() => process.exit(0))
     })
   })

@@ -40,8 +40,11 @@ services:
     build: .
     command: ['node', 'dist/api/index.js']
     environment: *app-env
+    # Bound to loopback: the demo runs with ADMIN_API_KEY=whkadmin_dev_only
+    # and ALLOW_PRIVATE_TARGETS=true, so the api must not be reachable from
+    # the network (that would hand out the exact SSRF the service prevents).
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -117,11 +120,14 @@ services:
 
   grafana:
     image: grafana/grafana:11.4.0
+    environment:
+      # The default admin/admin is a standing invitation on any shared host.
+      GF_SECURITY_ADMIN_PASSWORD: webhook_demo_only
     volumes:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - '3001:3000'
+      - '127.0.0.1:3001:3000'
 
 volumes:
   pgdata:

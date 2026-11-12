@@ -3,6 +3,7 @@ import {
   createEntryPool,
   createProcessLogger,
   installSignalHandlers,
+  armHardExit,
 } from '../process/bootstrap.js'
 import { createDispatcher } from './loop.js'
 import { createMetricsApp } from '../observability/metrics-server.js'
@@ -58,8 +59,10 @@ async function main(): Promise<void> {
   })
   async function shutdown(): Promise<void> {
     logger.info('shutdown signal: stopping claims, draining in-flight sends')
+    const hardExit = armHardExit(logger)
     await dispatcher.stop()
     server.close()
+    clearTimeout(hardExit)
     await pool.end()
     process.exit(0)
   }

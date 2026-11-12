@@ -3,6 +3,7 @@ import {
   createEntryPool,
   createProcessLogger,
   installSignalHandlers,
+  armHardExit,
 } from '../process/bootstrap.js'
 import { runMaintenanceLoop } from './sweep.js'
 import { createMetricsApp } from '../observability/metrics-server.js'
@@ -28,12 +29,16 @@ async function main(): Promise<void> {
   })
 
   let stopping = false
+  // I7: the between-sweeps sleep is abortable, so a stop signal ends the
+  // loop immediately instead of after up to a full interval.
+  const stopSignal = new AbortController()
   const maintenance = runMaintenanceLoop(pool, {
     retentionDays: config.retentionDays,
     deliveryMaxAgeHours: config.deliveryMaxAgeHours,
     autoDisableAfterDays: config.autoDisableAfterDays,
     intervalMs: SWEEP_INTERVAL_MS,
     shouldStop: () => stopping,
+    signal: stopSignal.signal,
     onSweep: (result) => {
       logger.info(
         {
@@ -54,8 +59,11 @@ async function main(): Promise<void> {
   installSignalHandlers((signal) => {
     logger.info({ signal }, 'shutting down')
     stopping = true
+    stopSignal.abort()
+    const hardExit = armHardExit(logger)
     void maintenance.then(() =>
       server.close(() => {
+        clearTimeout(hardExit)
         void pool.end().then(() => process.exit(0))
       }),
     )
