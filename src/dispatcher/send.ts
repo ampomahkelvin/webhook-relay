@@ -12,6 +12,22 @@ import type { DeliveryDetails } from './claim.js'
 const MAX_SNIPPET_BYTES = 1024
 
 /**
+ * Postgres `text` accepts only valid UTF-8 without NUL bytes, so a raw
+ * body slice must not go to the record statement as bytes: a body cut in
+ * the middle of a multi-byte character at the 1 KB boundary, binary or
+ * compressed bytes (e.g. gzip), or a NUL would make the attempt's INSERT
+ * throw — and (before this sanitizer) a thrown record looked like a worker
+ * error, re-sending a delivery the receiver had already answered.
+ *
+ * Truncate in bytes FIRST, then decode leniently: an invalid sequence
+ * becomes U+FFFD (never an error), and NUL becomes U+FFFD too. The result
+ * is a string Postgres always accepts, at most `maxBytes` characters.
+ */
+export function toSnippet(bytes: Buffer, maxBytes = MAX_SNIPPET_BYTES): string {
+  return bytes.subarray(0, maxBytes).toString('utf8').replaceAll('\u0000', '\uFFFD')
+}
+
+/**
  * One attempt: build, sign, send through the SSR-safe client, classify
  * (DESIGN section 6.2 + 6.3). This does not touch the database — the
  * dispatcher calls `recordAttempt` with the outcome, so a send and its
@@ -29,8 +45,8 @@ export interface AttemptSent {
   outcome: AttemptOutcome
   statusCode?: number
   errorKind?: string
-  /** Response snippet, already capped for storage (DESIGN: at most 1 KB). */
-  snippet?: Buffer
+  /** Response snippet, already sanitized for storage (DESIGN: at most 1 KB). */
+  snippet?: string
   startedAtMs: number
   durationMs: number
   /**
@@ -51,7 +67,7 @@ export async function sendDeliveryAttempt(
     statusCode?: number
     headers?: HttpLikeHeaders
     kind?: string
-    snippet?: Buffer
+    snippet?: string
   }
   let response: WireResult
   let internalError: string | undefined
@@ -84,7 +100,7 @@ export async function sendDeliveryAttempt(
       response = {
         statusCode: result.statusCode,
         headers: result.headers,
-        snippet: result.snippet.subarray(0, MAX_SNIPPET_BYTES),
+        snippet: toSnippet(result.snippet),
       }
     } else {
       response = { kind: result.kind }

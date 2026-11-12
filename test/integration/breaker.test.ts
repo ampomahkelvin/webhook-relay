@@ -41,7 +41,7 @@ const failed = (db: TestDatabase, args: FailArgs) =>
     startedAtMs: T0,
     durationMs: 25,
     statusCode: 500,
-    responseSnippet: Buffer.from('kaboom'),
+    responseSnippet: 'kaboom',
   })
 
 export const succeededAttempt = (db: TestDatabase, args: FailArgs) =>

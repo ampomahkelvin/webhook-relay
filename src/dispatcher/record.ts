@@ -38,7 +38,13 @@ export interface RecordParams {
   durationMs: number
   statusCode?: number
   errorKind?: string
-  responseSnippet?: Buffer
+  /**
+   * The response snippet as a storage-safe string (already sanitized by
+   * `toSnippet` in send.ts: valid UTF-8, no NUL). Sliced to the column's
+   * 1,024-character CHECK here as well, so an oversized caller degrades to
+   * a short snippet instead of a failed record.
+   */
+  responseSnippet?: string
   /** Consecutive-failure count that opens the breaker. */
   breakerThreshold: number
 }
@@ -77,7 +83,7 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
         Math.max(0, Math.min(durationMs, 2_147_483_647)),
         statusCode ?? null,
         errorKind ?? null,
-        responseSnippet !== undefined ? responseSnippet.subarray(0, 1024) : null,
+        responseSnippet !== undefined ? responseSnippet.slice(0, 1024) : null,
       ],
     )
 

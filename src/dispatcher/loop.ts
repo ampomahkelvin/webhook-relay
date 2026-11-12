@@ -118,32 +118,104 @@ export function createDispatcher(
     nextAttemptAtMs?: number
   }
 
-  /** All outcomes that touch the delivery (the fenced part). */
-  async function decideOutcome(
+  /** The stats key an outcome feeds, so stats and metrics move together. */
+  const statsKeyOf = (outcome: SendOutcome): 'succeeded' | 'retried' | 'dead' =>
+    outcome === 'succeeded' ? 'succeeded' : outcome === 'dead' ? 'dead' : 'retried'
+
+  /** Pure per DESIGN: a sent attempt → what to record (no clock, no stats). */
+  function decideOutcome(
     claimed: ClaimedDelivery,
     details: DeliveryDetails,
     sent: Awaited<ReturnType<typeof sendDeliveryAttempt>>,
-  ): Promise<RecordAttemptArgs> {
+  ): RecordAttemptArgs {
     if (sent.outcome.kind === 'succeeded') {
-      stats.succeeded++
       return { outcome: 'succeeded' as const }
     }
     if (sent.outcome.kind === 'gone') {
-      stats.dead++
       return { outcome: 'dead' as const, deadReason: 'gone' as const }
     }
     const scheduled = scheduleNext({
       attemptNumber: claimed.attemptNumber - details.cycleStart,
-      nowMs: Date.now(),
+      nowMs: sent.startedAtMs,
       retryAfterSeconds: sent.outcome.kind === 'retry' ? sent.outcome.retryAfterSeconds : undefined,
       delaysMs: config.delaysMs,
     })
     if (scheduled.outcome === 'dead') {
-      stats.dead++
       return { outcome: 'dead' as const, deadReason: 'schedule_exhausted' as const }
     }
-    stats.retried++
     return { outcome: 'retry' as const, nextAttemptAtMs: scheduled.nextAttemptAtMs }
+  }
+
+  /** Apply one decided outcome to the stats counters (with the metrics). */
+  function noteOutcome(decided: RecordAttemptArgs): void {
+    stats[statsKeyOf(decided.outcome)]++
+  }
+
+  /**
+   * Record ONE attempt result. A recording failure is NOT a send failure:
+   * the receiver has already answered (possibly acted on the webhook), so
+   * re-sending now would double-deliver. The record is idempotent (fenced
+   * by `attempt_count`), so retry it briefly with backoff; if it still
+   * fails, leave the lease to expire — the delivery is re-claimed only
+   * after the lease is long gone, which is the legitimate at-least-once
+   * path, not an immediate re-send.
+   */
+  async function recordWithRetries(
+    claimed: ClaimedDelivery,
+    decided: RecordAttemptArgs,
+    sent: Awaited<ReturnType<typeof sendDeliveryAttempt>>,
+  ): Promise<void> {
+    const backoffsMs = [250, 1_000, 4_000]
+    for (;;) {
+      try {
+        const recorded = await recordAttempt(pool, {
+          deliveryId: claimed.id,
+          endpointId: claimed.endpointId,
+          breakerThreshold: config.breakerThreshold,
+          claimedAttempt: claimed.attemptNumber,
+          startedAtMs: sent.startedAtMs,
+          durationMs: sent.durationMs,
+          statusCode: sent.statusCode,
+          errorKind: sent.errorKind,
+          responseSnippet: sent.snippet,
+          ...decided,
+        })
+        if (!recorded.applied) {
+          // Stale: the lease expired and a newer attempt exists. The attempt
+          // log row stands; the delivery state belongs to the newer attempt.
+          stats.stale++
+          logger.info(
+            { deliveryId: claimed.id, attempt: claimed.attemptNumber },
+            'stale worker: result not applied',
+          )
+        } else {
+          noteOutcome(decided)
+          if (metrics) {
+            metrics.attemptDuration(sent.durationMs / 1_000)
+            metrics.deliveryOutcome(decided.outcome)
+          }
+        }
+        return
+      } catch (error) {
+        const waitMs = backoffsMs.shift()
+        if (waitMs === undefined || stopping) {
+          logger.error(
+            {
+              deliveryId: claimed.id,
+              attempt: claimed.attemptNumber,
+              err: (error as Error).message,
+            },
+            'recording the attempt failed; leaving the lease to expire (no re-send)',
+          )
+          return
+        }
+        logger.warn(
+          { deliveryId: claimed.id, err: (error as Error).message },
+          'recording the attempt failed; retrying the record',
+        )
+        await idleWait(waitMs)
+      }
+    }
   }
 
   async function processClaim(
@@ -157,7 +229,20 @@ export function createDispatcher(
         stats.sends++
         return
       }
-      const sent = await sendDeliveryAttempt(details, config)
+      let sent: Awaited<ReturnType<typeof sendDeliveryAttempt>>
+      try {
+        sent = await sendDeliveryAttempt(details, config)
+      } catch (error) {
+        // `sendDeliveryAttempt` is total (it classifies every failure
+        // internally); reaching here is a programming error. Treat it like
+        // a transport failure recorded on the schedule, not a crash.
+        logger.error({ deliveryId: claimed.id, err: (error as Error).message }, 'send threw')
+        sent = {
+          outcome: { kind: 'retry', errorKind: 'connection' },
+          startedAtMs: Date.now(),
+          durationMs: 0,
+        }
+      }
       stats.sends++
       if (sent.internalError) {
         logger.warn(
@@ -166,51 +251,13 @@ export function createDispatcher(
         )
       }
 
-      const decided = await decideOutcome(claimed, details, sent)
-      const recorded = await recordAttempt(pool, {
-        deliveryId: claimed.id,
-        endpointId: claimed.endpointId,
-        breakerThreshold: config.breakerThreshold,
-        claimedAttempt: claimed.attemptNumber,
-        startedAtMs: sent.startedAtMs,
-        durationMs: sent.durationMs,
-        statusCode: sent.statusCode,
-        errorKind: sent.errorKind,
-        responseSnippet: sent.snippet,
-        ...decided,
-      })
-      if (!recorded.applied) {
-        // Stale: the lease expired and a newer attempt exists. The attempt
-        // log row stands; the delivery state belongs to the newer attempt.
-        stats.stale++
-        logger.info(
-          { deliveryId: claimed.id, attempt: claimed.attemptNumber },
-          'stale worker: result not applied',
-        )
-      } else if (metrics) {
-        metrics.attemptDuration(sent.durationMs / 1_000)
-        metrics.deliveryOutcome(decided.outcome)
-      }
+      const decided = decideOutcome(claimed, details, sent)
+      await recordWithRetries(claimed, decided, sent)
     } catch (error) {
-      // An unexpected error must not take the dispatcher down; retry per
-      // schedule via a best-effort fenced record.
+      // Nothing above throws by design; this is the last-resort net so one
+      // worker's failure can never take the dispatcher down. The lease is
+      // left to expire (no blind re-send, no bypass of the schedule).
       logger.error({ deliveryId: claimed.id, err: (error as Error).message }, 'worker error')
-      try {
-        const recorded = await recordAttempt(pool, {
-          deliveryId: claimed.id,
-          endpointId: claimed.endpointId,
-          breakerThreshold: config.breakerThreshold,
-          claimedAttempt: claimed.attemptNumber,
-          outcome: 'retry',
-          nextAttemptAtMs: Date.now() + config.pollIntervalMs,
-          startedAtMs: Date.now(),
-          durationMs: 0,
-          errorKind: 'connection',
-        })
-        if (!recorded.applied) stats.stale++
-      } catch {
-        // Leave the lease: the delivery is retried after the lease expires.
-      }
     }
   }
 
@@ -254,7 +301,19 @@ export function createDispatcher(
       if (stopping) break
 
       if (claimedList.length > 0) {
-        await scheduleClaimed(claimedList)
+        try {
+          await scheduleClaimed(claimedList)
+        } catch (error) {
+          // A details-read failure must not kill the pump (it would end
+          // dispatching silently): back off like a failed claim. These
+          // claims' leases expire on their own and are then re-claimed.
+          if (!claimFailureLogged) {
+            logger.error({ err: (error as Error).message }, 'details read failed; backing off')
+            claimFailureLogged = true
+          }
+          await idleWait(config.pollIntervalMs)
+          continue
+        }
         if (claimedList.length === wanted) continue // full batch: claim again immediately
       }
       // Work ran out: idle until the next poll.

@@ -98,7 +98,7 @@ describe('recordAttempt', () => {
       startedAtMs: T(0),
       durationMs: 140,
       statusCode: 200,
-      responseSnippet: Buffer.from('{"received":true}'),
+      responseSnippet: '{"received":true}',
     })
     expect(result).toEqual({ applied: true })
 
@@ -124,7 +124,7 @@ describe('recordAttempt', () => {
       startedAtMs: T(0),
       durationMs: 250,
       statusCode: 500,
-      responseSnippet: Buffer.from('boom'),
+      responseSnippet: 'boom',
     })
     expect(result).toEqual({ applied: true })
 
@@ -147,7 +147,7 @@ describe('recordAttempt', () => {
       startedAtMs: T(0),
       durationMs: 90,
       statusCode: 410,
-      responseSnippet: Buffer.from('gone'),
+      responseSnippet: 'gone',
     })
     expect(result).toEqual({ applied: true })
     const row = await loadDelivery(db.pool, id)
@@ -166,7 +166,7 @@ describe('recordAttempt', () => {
       startedAtMs: T(0),
       durationMs: 10,
       statusCode: 200,
-      responseSnippet: Buffer.alloc(2000, 'x'),
+      responseSnippet: 'x'.repeat(2000),
     })
     const attempt = await attemptRow(db.pool, id, 1)
     expect(attempt?.response_snippet?.length).toBe(1024)
@@ -184,7 +184,7 @@ describe('recordAttempt', () => {
         startedAtMs: T(0),
         durationMs: 5,
         statusCode: 503,
-        responseSnippet: Buffer.from('again'),
+        responseSnippet: 'again',
       })
     }
     const count = await db.pool.query<{ n: string }>(
