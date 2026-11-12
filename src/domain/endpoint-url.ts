@@ -2,16 +2,28 @@ import { isIP } from 'node:net'
 import { isBlockedAddress } from './ip-blocklist.js'
 import { normalizeUrlHostname } from './hostname.js'
 
+export type InvalidEndpointUrlCode = 'invalid_url' | 'blocked_address'
+
 export class InvalidEndpointUrlError extends Error {
-  constructor(message: string) {
+  /** Machine-readable reason, so a caller can map it onto an attempt's error kind. */
+  readonly code: InvalidEndpointUrlCode
+  constructor(code: InvalidEndpointUrlCode, message: string) {
     super(message)
     this.name = 'InvalidEndpointUrlError'
+    this.code = code
   }
 }
 
 export interface EndpointUrlOptions {
   /** Dev escape hatch: accept `http://` receivers. Default false. */
   allowInsecureHttp?: boolean
+  /**
+   * Dev escape hatch (demo stacks point at private receivers by literal
+   * IP): accept literal IPs in blocked ranges at layer 1. Layer 2 honors
+   * the same flag per resolved address, so this cannot widen what a
+   * production deployment sends to.
+   */
+  allowPrivateTargets?: boolean
 }
 
 /**
@@ -26,24 +38,30 @@ export function validateEndpointUrl(raw: string, options: EndpointUrlOptions = {
   try {
     parsed = new URL(raw)
   } catch {
-    throw new InvalidEndpointUrlError('URL could not be parsed')
+    throw new InvalidEndpointUrlError('invalid_url', 'URL could not be parsed')
   }
 
   const isHttps = parsed.protocol === 'https:'
   const isHttp = parsed.protocol === 'http:'
   if (!isHttps && !(options.allowInsecureHttp === true && isHttp)) {
-    throw new InvalidEndpointUrlError(`Only HTTPS URLs are allowed (got '${parsed.protocol}')`)
+    throw new InvalidEndpointUrlError(
+      'invalid_url',
+      `Only HTTPS URLs are allowed (got '${parsed.protocol}')`,
+    )
   }
   if (parsed.username !== '' || parsed.password !== '') {
-    throw new InvalidEndpointUrlError('URL must not contain embedded credentials')
+    throw new InvalidEndpointUrlError('invalid_url', 'URL must not contain embedded credentials')
   }
 
   const host = parsed.hostname
   // Node keeps brackets on IPv6 hostnames ('[::1]') and encodes zone ids as %25...
   const stripped = normalizeUrlHostname(host)
   if (isIP(stripped) !== 0) {
-    if (isBlockedAddress(stripped)) {
-      throw new InvalidEndpointUrlError(`Literal IP '${host}' is in a blocked range`)
+    if (options.allowPrivateTargets !== true && isBlockedAddress(stripped)) {
+      throw new InvalidEndpointUrlError(
+        'blocked_address',
+        `Literal IP '${host}' is in a blocked range`,
+      )
     }
   }
   // Non-IP hostnames pass layer 1 on purpose: the check that matters

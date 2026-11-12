@@ -26,6 +26,7 @@ export function tenantRouter(pool: Pool, options: TenantRouterOptions): Router {
     endpointRouter(pool, {
       maxEndpointsPerTenant: options.maxEndpointsPerTenant,
       allowInsecureHttp: options.allowInsecureHttp,
+      allowPrivateTargets: options.allowPrivateTargets,
       encryptionKey: options.encryptionKey,
     }),
   )

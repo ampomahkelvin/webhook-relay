@@ -117,7 +117,8 @@ export function eventsRouter(pool: Pool, options: IntakeOptions): Router {
         id: replayId,
         deliveries: Number(resolved.replay_deliveries ?? 0),
       })
-    options.metrics?.eventReceived()
+    // No eventReceived() here: this is a REPLAY of an event that was
+    // already counted at intake, not a new one.
   })
 
   router.get('/events/:id', async (req: Request, res: Response) => {

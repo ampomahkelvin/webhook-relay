@@ -30,6 +30,8 @@ export interface EndpointRouterOptions {
   maxEndpointsPerTenant: number
   /** Dev-only: allow `http://` receivers. Default false. */
   allowInsecureHttp?: boolean
+  /** Dev-only: allow literal private-IP receivers. Default false. */
+  allowPrivateTargets?: boolean
   /** Base64 ENCRYPTION_KEY for the signing-secret store. */
   encryptionKey: string
 }
@@ -80,7 +82,10 @@ export function endpointRouter(pool: Pool, options: EndpointRouterOptions): Rout
 
   const validateUrl = (raw: string): string => {
     try {
-      return validateEndpointUrl(raw, { allowInsecureHttp: options.allowInsecureHttp })
+      return validateEndpointUrl(raw, {
+        allowInsecureHttp: options.allowInsecureHttp,
+        allowPrivateTargets: options.allowPrivateTargets,
+      })
     } catch (error) {
       if (error instanceof InvalidEndpointUrlError) {
         throw new AppError(400, 'VALIDATION_ERROR', `url: ${error.message}`)

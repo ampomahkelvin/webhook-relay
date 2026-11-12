@@ -16,11 +16,12 @@ async function main(): Promise<void> {
   const config = loadConfigOrExit(loadDispatcherConfig)
   const logger = createProcessLogger(config, 'dispatcher')
 
-  // One send per in-flight delivery: the pool must hold the concurrency,
-  // plus slack for the claims and the metrics gauges, else workers queue
-  // behind DB slots and the invariant fails invisibly.
+  // The send itself holds NO database client (DESIGN: never a transaction
+  // across a send) — the pool only serves the short claim, details-read,
+  // and record statements, so ~20 slots keep up with any concurrency; a
+  // larger pool would just eat Postgres max_connections.
   const pool = createEntryPool(config, logger, {
-    max: config.dispatcherConcurrency + 2,
+    max: 20,
   })
 
   const metrics = new Metrics()

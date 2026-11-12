@@ -2,6 +2,8 @@
 
 Multi-tenant, producer-agnostic webhook delivery service: signed requests, retries with jitter, per-endpoint circuit breakers, SSRF protection. PostgreSQL is both the store and the delivery queue.
 
+> **Naming note:** the directory/package is `webhook-inbox`; older docs and the code review refer to the same project as "webhook-relay". The names are interchangeable — `webhook-inbox` is the one that ships.
+
 See [`DESIGN.md`](./DESIGN.md) for what it guarantees (and why), and [`PLAN.md`](./PLAN.md) for the build plan.
 
 ```

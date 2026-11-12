@@ -90,6 +90,7 @@ export function createApp({
     tenantRouter(pool, {
       maxEndpointsPerTenant,
       allowInsecureHttp,
+      allowPrivateTargets,
       encryptionKey,
       ratePerMinute: intake.ratePerMinute,
       burst: intake.burst,

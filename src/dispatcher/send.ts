@@ -6,6 +6,8 @@ import {
 } from '../infra/ssrf-client.js'
 import { buildOutboundRequest } from '../domain/outbound-request.js'
 import { classifyAttempt, type AttemptOutcome, type HttpLikeHeaders } from '../domain/classify.js'
+import { InvalidEndpointUrlError } from '../domain/endpoint-url.js'
+import type { ErrorKind } from '../domain/vocabulary.js'
 import type { DeliveryDetails } from '../db/delivery-queue.js'
 
 /** Cap of the stored response snippet (DESIGN: at most 1 KB). */
@@ -44,7 +46,7 @@ export interface SendCallOptions {
 export interface AttemptSent {
   outcome: AttemptOutcome
   statusCode?: number
-  errorKind?: string
+  errorKind?: ErrorKind
   /** Response snippet, already sanitized for storage (DESIGN: at most 1 KB). */
   snippet?: string
   startedAtMs: number
@@ -66,7 +68,7 @@ export async function sendDeliveryAttempt(
   type WireResult = {
     statusCode?: number
     headers?: HttpLikeHeaders
-    kind?: string
+    kind?: ErrorKind
     snippet?: string
   }
   let response: WireResult
@@ -85,7 +87,10 @@ export async function sendDeliveryAttempt(
         payload: details.payload,
       },
       { url: details.endpointUrl, secret },
-      { allowInsecureHttp: options.allowInsecureHttp },
+      {
+        allowInsecureHttp: options.allowInsecureHttp,
+        allowPrivateTargets: options.allowPrivateTargets,
+      },
     )
     const result: SendResult = await sendThroughSsrfClient({
       url: request.target.toString(),
@@ -108,15 +113,20 @@ export async function sendDeliveryAttempt(
   } catch (error) {
     // Endpoint-configuration problems (invalid URL, bad secret) fail the
     // attempt like a transport error and are retried on the schedule —
-    // but with the reason visible instead of collapsed into the kind.
-    response = { kind: 'connection' }
+    // but with the reason visible instead of collapsed into the kind. A
+    // blocked literal IP keeps its own kind so ops can tell it apart.
+    if (error instanceof InvalidEndpointUrlError && error.code === 'blocked_address') {
+      response = { kind: 'blocked_address' }
+    } else {
+      response = { kind: 'connection' }
+    }
     internalError = (error as Error).message
   }
 
   const durationMs = Date.now() - startedAtMs
   const outcome = classifyAttempt({
     statusCode: response.statusCode,
-    errorKind: response.kind as never,
+    errorKind: response.kind,
     headers: response.headers,
   })
   return {

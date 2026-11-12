@@ -27,6 +27,8 @@ export interface OutboundOptions {
   timestampSeconds?: number
   /** Dev escape hatch for `http://` receivers, same policy as registration. */
   allowInsecureHttp?: boolean
+  /** Dev escape hatch for literal private-IP receivers, same policy as registration. */
+  allowPrivateTargets?: boolean
 }
 
 export interface OutboundRequest {
@@ -47,6 +49,7 @@ export function buildOutboundRequest(
 ): OutboundRequest {
   const urlText = validateEndpointUrl(endpoint.url, {
     allowInsecureHttp: options.allowInsecureHttp,
+    allowPrivateTargets: options.allowPrivateTargets,
   })
   const target = new URL(urlText)
 
