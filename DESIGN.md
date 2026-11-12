@@ -225,6 +225,7 @@ JOIN endpoints e ON e.tenant_id = $1
 - **Concurrent duplicates:** the second insert waits on the unique index, then takes the replay path. (Requires `READ COMMITTED`.)
 - **Endpoints that are `disabled` get no delivery.** Endpoints whose breaker is open still get deliveries; they queue until the breaker allows sending.
 - **Limits:** payload at most 256 KB (enforced at the body parser), JSON object only, per-tenant token-bucket rate limit (in memory in v1; Redis if the API is scaled out).
+- **Payload fidelity is JSON-level, not byte-level.** The body is parsed by `express.json`, stored as `jsonb`, and re-serialized on delivery. That means (1) numbers beyond `2^53 − 1` lose precision — a 64-bit numeric ID such as `9007199254740993` arrives as `9007199254740992`, and the signature still verifies (it signs what was sent, so the receiver cannot detect it); (2) key order and whitespace are normalized (`jsonb` semantics); (3) the delivered body is the canonical serialization, not the producer's bytes. **Producers must send 64-bit identifiers as strings** — the same convention every webhook provider documents. Changing this (storing the original text alongside the `jsonb`) is a deliberate schema change, not a fix.
 
 ---
 

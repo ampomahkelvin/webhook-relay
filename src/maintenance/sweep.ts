@@ -1,4 +1,4 @@
-import type { Pool } from 'pg'
+import type { Pool, PoolClient } from 'pg'
 import { setTimeout as abortableSleep } from 'node:timers/promises'
 
 /**
@@ -27,6 +27,13 @@ export interface MaintenanceConfig {
 export interface SweepOptions extends MaintenanceConfig {
   /** Injectable clock for deterministic cutoffs in tests. */
   nowMs?: number
+  /**
+   * Retention batch size (I8): events are deleted in bounded chunks so a
+   * large backlog (first run after enabling retention, or after a long
+   * downtime) cannot become one huge DELETE holding locks and bloating
+   * tables. Default 5,000.
+   */
+  retentionBatchSize?: number
 }
 
 export interface SweepResult {
@@ -36,6 +43,9 @@ export interface SweepResult {
   deliveriesExpired: number
   endpointsDisabled: number
 }
+
+/** Rows per retention DELETE; each batch is its own transaction (I8). */
+const DEFAULT_RETENTION_BATCH = 5_000
 
 /** Constant across the codebase so any instance competes for the same lock. */
 export const MAINTENANCE_LOCK_ID = 781_207_442
@@ -51,6 +61,7 @@ export async function runMaintenanceSweep(pool: Pool, options: SweepOptions): Pr
   const retentionCutoff = new Date(nowMs - options.retentionDays * 86_400_000)
   const expiryCutoff = new Date(nowMs - options.deliveryMaxAgeHours * 3_600_000)
   const disableCutoff = new Date(nowMs - options.autoDisableAfterDays * 86_400_000)
+  const batchSize = options.retentionBatchSize ?? DEFAULT_RETENTION_BATCH
 
   const client = await pool.connect()
   let locked = false
@@ -62,34 +73,15 @@ export async function runMaintenanceSweep(pool: Pool, options: SweepOptions): Pr
     locked = acquired.rows[0]!.locked
     if (!locked) return { swept: false, ...IDLE }
 
-    await client.query('BEGIN')
-    const pruned = await client.query<{ count: string }>(
-      `DELETE FROM events WHERE created_at < $1 RETURNING id`,
-      [retentionCutoff],
-    )
-    // The CHECK (pending ⇔ completed_at IS NULL) means an expiry writes
-    // completed_at in the same breath as the status.
-    const expired = await client.query<{ count: string }>(
-      `UPDATE deliveries SET status = 'dead', completed_at = now()
-       WHERE status = 'pending' AND created_at < $1 RETURNING id`,
-      [expiryCutoff],
-    )
-    const disabled = await client.query<{ count: string }>(
-      `UPDATE endpoints
-       SET status = 'disabled', disabled_reason = 'failing', updated_at = now()
-       WHERE status = 'enabled'
-         AND failing_since IS NOT NULL
-         AND failing_since < $1
-       RETURNING id`,
-      [disableCutoff],
-    )
-    await client.query('COMMIT')
-    return {
-      swept: true,
-      eventsDeleted: pruned.rows.length,
-      deliveriesExpired: expired.rows.length,
-      endpointsDisabled: disabled.rows.length,
-    }
+    // Each sweep runs in its OWN transaction (I8): a huge prune can no
+    // longer share a transaction with (and hold locks under) the expiry
+    // and auto-disable sweeps. The advisory lock is session-level, so it
+    // spans the commits; an error mid-prune leaves earlier batches
+    // deleted, which is the correct direction for retention.
+    const eventsDeleted = await pruneOldEvents(client, retentionCutoff, batchSize)
+    const deliveriesExpired = await expireStaleDeliveries(client, expiryCutoff)
+    const endpointsDisabled = await disableFailingEndpoints(client, disableCutoff)
+    return { swept: true, eventsDeleted, deliveriesExpired, endpointsDisabled }
   } catch (error) {
     if (locked) await client.query('ROLLBACK').catch(() => {})
     throw error
@@ -98,6 +90,86 @@ export async function runMaintenanceSweep(pool: Pool, options: SweepOptions): Pr
       await client.query('SELECT pg_advisory_unlock($1)', [MAINTENANCE_LOCK_ID]).catch(() => {})
     }
     client.release()
+  }
+}
+
+/** DELETE the events (and cascaded deliveries + attempts) older than the cutoff, in bounded batches. */
+async function pruneOldEvents(
+  client: PoolClient,
+  cutoff: Date,
+  batchSize: number,
+): Promise<number> {
+  let deleted = 0
+  for (;;) {
+    await client.query('BEGIN')
+    try {
+      // Batched by id: each statement removes at most `batchSize` events
+      // (their deliveries and attempt logs cascade within the same
+      // statement), so every transaction stays bounded.
+      const pruned = await client.query<{ count: string }>(
+        `WITH batch AS (
+           SELECT id FROM events WHERE created_at < $1 LIMIT $2 FOR UPDATE SKIP LOCKED
+         )
+         DELETE FROM events e
+         WHERE e.id IN (SELECT id FROM batch)
+         RETURNING 1 AS count`,
+        [cutoff, batchSize],
+      )
+      const batchDeleted = pruned.rows.length
+      await client.query('COMMIT')
+      deleted += batchDeleted
+      if (batchDeleted < batchSize) return deleted
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw error
+    }
+  }
+}
+
+/**
+ * The expiry sweep (DESIGN section 3/7): pending deliveries older than
+ * the max age become `dead`. The CHECK (pending ⇔ completed_at IS NULL)
+ * means an expiry writes completed_at in the same breath as the status.
+ * One bounded statement; the attempt log is untouched (append-only).
+ */
+async function expireStaleDeliveries(client: PoolClient, cutoff: Date): Promise<number> {
+  await client.query('BEGIN')
+  try {
+    const expired = await client.query<{ count: string }>(
+      `UPDATE deliveries SET status = 'dead', completed_at = now()
+       WHERE status = 'pending' AND created_at < $1 RETURNING id`,
+      [cutoff],
+    )
+    await client.query('COMMIT')
+    return expired.rows.length
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  }
+}
+
+/**
+ * Auto-disable (DESIGN section 7): an endpoint whose failure predates the
+ * threshold is disabled with reason `failing` so its pending deliveries
+ * stay unclaimed until a human re-enables it.
+ */
+async function disableFailingEndpoints(client: PoolClient, cutoff: Date): Promise<number> {
+  await client.query('BEGIN')
+  try {
+    const disabled = await client.query<{ count: string }>(
+      `UPDATE endpoints
+       SET status = 'disabled', disabled_reason = 'failing', updated_at = now()
+       WHERE status = 'enabled'
+         AND failing_since IS NOT NULL
+         AND failing_since < $1
+       RETURNING id`,
+      [cutoff],
+    )
+    await client.query('COMMIT')
+    return disabled.rows.length
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
   }
 }
 
