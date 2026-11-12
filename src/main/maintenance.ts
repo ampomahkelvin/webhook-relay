@@ -4,8 +4,10 @@ import {
   createProcessLogger,
   installSignalHandlers,
   armHardExit,
-} from '../process/bootstrap.js'
-import { runMaintenanceLoop } from './loop.js'
+  runProcess,
+} from './bootstrap.js'
+import { loadMaintenanceConfig } from '../config/maintenance.js'
+import { runMaintenanceLoop } from '../maintenance/loop.js'
 import { createMetricsApp } from '../observability/metrics-server.js'
 import { Metrics } from '../observability/metrics.js'
 
@@ -18,7 +20,7 @@ const SWEEP_INTERVAL_MS = 60_000
  * and `/metrics` on PORT for the scraper.
  */
 async function main(): Promise<void> {
-  const config = loadConfigOrExit()
+  const config = loadConfigOrExit(loadMaintenanceConfig)
   const logger = createProcessLogger(config, 'maintenance')
   const pool = createEntryPool(config, logger)
 
@@ -70,7 +72,4 @@ async function main(): Promise<void> {
   })
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+runProcess(main)

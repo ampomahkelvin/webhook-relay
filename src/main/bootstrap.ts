@@ -1,20 +1,24 @@
 import type { Pool } from 'pg'
-import { ConfigError, loadConfig, type Config } from '../config/index.js'
+import { ConfigError } from '../config/schema.js'
 import { createPool } from '../db/pool.js'
 import { createLogger, type Logger } from '../logger.js'
 
 /**
  * The ritual every entrypoint performs (api, dispatcher, maintenance): load
- * the validated Config or exit 2, create the pool with the idle-client
- * error handler attached, and register the shutdown signals. One helper so
- * no entrypoint can forget a step — the api process used to skip the pool
- * error handler entirely, leaving uncaught idle-client errors to kill it.
+ * the process's validated config or exit 2, create the pool with the
+ * idle-client error handler attached, and register the shutdown signals.
+ * One helper so no entrypoint can forget a step — the api process used to
+ * skip the pool error handler entirely, leaving uncaught idle-client
+ * errors to kill it.
  */
 
-/** Load config; on a ConfigError print the reason and exit 2 ("config"). */
-export function loadConfigOrExit(): Config {
+/**
+ * Load a process's config via its `load*Config` parser; on a ConfigError
+ * print the reason and exit 2 ("config").
+ */
+export function loadConfigOrExit<T>(parse: () => T): T {
   try {
-    return loadConfig()
+    return parse()
   } catch (error) {
     if (error instanceof ConfigError) {
       console.error(error.message)
@@ -25,13 +29,16 @@ export function loadConfigOrExit(): Config {
 }
 
 /** Logger for the named process (used by createEntryPool). */
-export function createProcessLogger(config: Config, name: string): Logger {
+export function createProcessLogger(
+  config: { logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' },
+  name: string,
+): Logger {
   return createLogger(name, config.logLevel)
 }
 
 /** Entry pool: a production pool plus the idle-client error handler. */
 export function createEntryPool(
-  config: Pick<Config, 'databaseUrl'>,
+  config: { databaseUrl: string },
   logger: Logger,
   sizing?: { max: number },
 ): Pool {
@@ -61,4 +68,15 @@ export function armHardExit(logger: Logger, ms = 25_000): NodeJS.Timeout {
   }, ms)
   timer.unref()
   return timer
+}
+
+/**
+ * Top-level runner: any error escaping an entrypoint's `main` is printed
+ * and exits 1, instead of dying as an unhandled rejection.
+ */
+export function runProcess(main: () => Promise<void>): void {
+  void main().catch((error) => {
+    console.error(error)
+    process.exit(1)
+  })
 }

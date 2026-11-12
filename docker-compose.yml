@@ -19,7 +19,7 @@ services:
 
   migrate:
     build: .
-    command: ['node', 'dist/db/migrate.js']
+    command: ['node', 'dist/main/migrate.js']
     environment: &app-env
       DATABASE_URL: postgres://webhook:webhook@postgres:5432/webhook
       # Dev-only values; never use them outside the demo stack.
@@ -38,7 +38,7 @@ services:
 
   api:
     build: .
-    command: ['node', 'dist/api/index.js']
+    command: ['node', 'dist/main/api.js']
     environment: *app-env
     # Bound to loopback: the demo runs with ADMIN_API_KEY=whkadmin_dev_only
     # and ALLOW_PRIVATE_TARGETS=true, so the api must not be reachable from
@@ -54,7 +54,7 @@ services:
 
   dispatcher:
     build: .
-    command: ['node', 'dist/dispatcher/index.js']
+    command: ['node', 'dist/main/dispatcher.js']
     environment: *app-env
     depends_on:
       postgres:
@@ -65,7 +65,7 @@ services:
 
   maintenance:
     build: .
-    command: ['node', 'dist/maintenance/index.js']
+    command: ['node', 'dist/main/maintenance.js']
     environment: *app-env
     depends_on:
       postgres:

@@ -4,14 +4,16 @@ import {
   createProcessLogger,
   installSignalHandlers,
   armHardExit,
-} from '../process/bootstrap.js'
-import { createDispatcher } from './loop.js'
+  runProcess,
+} from './bootstrap.js'
+import { loadDispatcherConfig } from '../config/dispatcher.js'
+import { createDispatcher } from '../dispatcher/loop.js'
 import { createMetricsApp } from '../observability/metrics-server.js'
 import { Metrics } from '../observability/metrics.js'
 
 /** The `dispatcher` entrypoint: claim, send, record; drained on SIGTERM. */
 async function main(): Promise<void> {
-  const config = loadConfigOrExit()
+  const config = loadConfigOrExit(loadDispatcherConfig)
   const logger = createProcessLogger(config, 'dispatcher')
 
   // One send per in-flight delivery: the pool must hold the concurrency,
@@ -68,7 +70,4 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+runProcess(main)

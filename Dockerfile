@@ -19,4 +19,4 @@ RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY migrations ./migrations
 USER node
-CMD ["node", "dist/api/index.js"]
+CMD ["node", "dist/main/api.js"]

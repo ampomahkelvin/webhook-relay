@@ -4,12 +4,15 @@ import {
   createProcessLogger,
   installSignalHandlers,
   armHardExit,
-} from '../process/bootstrap.js'
-import { createApp } from './app.js'
+  runProcess,
+} from './bootstrap.js'
+import { loadApiConfig } from '../config/api.js'
+import { createApp } from '../api/app.js'
 import { Metrics } from '../observability/metrics.js'
 
+/** The `api` entrypoint: intake, delivery admin, health + metrics. */
 async function main(): Promise<void> {
-  const config = loadConfigOrExit()
+  const config = loadConfigOrExit(loadApiConfig)
   const logger = createProcessLogger(config, 'api')
 
   const pool = createEntryPool(config, logger)
@@ -39,7 +42,4 @@ async function main(): Promise<void> {
   })
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+runProcess(main)

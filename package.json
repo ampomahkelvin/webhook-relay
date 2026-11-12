@@ -14,10 +14,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "api": "tsx src/api/index.ts",
-    "dispatcher": "tsx src/dispatcher/index.ts",
-    "maintenance": "tsx src/maintenance/index.ts",
-    "migrate": "tsx src/db/migrate.ts"
+    "api": "tsx src/main/api.ts",
+    "dispatcher": "tsx src/main/dispatcher.ts",
+    "maintenance": "tsx src/main/maintenance.ts",
+    "migrate": "tsx src/main/migrate.ts"
   },
   "dependencies": {
     "express": "^5.1.0",
