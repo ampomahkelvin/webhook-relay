@@ -179,6 +179,9 @@ export function createDispatcher(
           errorKind: sent.errorKind,
           responseSnippet: sent.snippet,
           ...decided,
+          // Same clock as the send: breaker timestamps and completed_at
+          // must not drift from the attempt they belong to (I2).
+          nowMs: sent.startedAtMs + sent.durationMs,
         })
         if (!recorded.applied) {
           // Stale: the lease expired and a newer attempt exists. The attempt

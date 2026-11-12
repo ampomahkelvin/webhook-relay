@@ -1,10 +1,5 @@
 import type { Pool, PoolClient } from 'pg'
-import {
-  nextOnFailure,
-  nextOnSuccess,
-  CLOSED_BREAKER,
-  type BreakerSnapshot,
-} from '../domain/breaker.js'
+import { nextOnFailure, CLOSED_BREAKER, type BreakerSnapshot } from '../domain/breaker.js'
 
 /**
  * Recording an attempt's outcome with fencing (DESIGN section 6.4), plus
@@ -18,7 +13,12 @@ import {
  *    endpoint,
  *  - the breaker transitions are computed by the pure functions in
  *    `domain/breaker.ts`; a healthy success (closed, zero failures) writes
- *    nothing (the write-amplification rule).
+ *    nothing (the write-amplification rule): the success path is ONE
+ *    conditional UPDATE whose WHERE matches only an unhealthy row — a
+ *    non-matching WHERE acquires no row lock, so concurrent completions
+ *    for a busy endpoint never queue on it (I1),
+ *  - failures take the read-and-compute path: they need the live snapshot
+ *    to decide the transition, so they hold the row lock briefly.
  */
 
 export type SendOutcome = 'succeeded' | 'dead' | 'retry'
@@ -47,6 +47,12 @@ export interface RecordParams {
   responseSnippet?: string
   /** Consecutive-failure count that opens the breaker. */
   breakerThreshold: number
+  /**
+   * The clock for breaker timestamps and `completed_at`; defaults to the
+   * process clock. Injected so tests control all time — and so, one day,
+   * every writer can take it from the database's clock instead (I2).
+   */
+  nowMs?: number
 }
 
 export type RecordResult = { applied: true } | { applied: false; stale: true }
@@ -65,6 +71,7 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
     errorKind,
     responseSnippet,
     breakerThreshold,
+    nowMs = Date.now(),
   } = params
 
   const client = await pool.connect()
@@ -105,8 +112,8 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
       [
         deliveryId,
         status,
-        isPending ? new Date(nextAttemptAtMs ?? 0) : new Date(startedAtMs),
-        isPending ? null : new Date(),
+        isPending ? new Date(nextAttemptAtMs ?? 0) : new Date(nowMs),
+        isPending ? null : new Date(nowMs),
         claimedAttempt,
       ],
     )
@@ -116,20 +123,21 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
     }
 
     if (outcome === 'succeeded') {
-      const snapshot = await readBreakerForUpdate(client, endpointId)
-      const transition = nextOnSuccess(snapshot)
-      if (transition.write) {
-        await client.query(
-          `UPDATE endpoints
-           SET circuit_state = $2, consecutive_failures = $3,
-               failing_since = NULL, circuit_opened_at = NULL
-           WHERE id = $1`,
-          [endpointId, transition.next.circuit, transition.next.consecutiveFailures],
-        )
-      }
+      // I1 — the write-amplification rule as ONE statement: it touches
+      // nothing when the endpoint is already healthy, and a non-matching
+      // WHERE takes no row lock, so concurrent completions for the same
+      // busy endpoint never queue on it. Failures keep the
+      // read-and-compute path below (they need the live snapshot).
+      await client.query(
+        `UPDATE endpoints
+         SET circuit_state = 'closed', consecutive_failures = 0,
+             failing_since = NULL, circuit_opened_at = NULL
+         WHERE id = $1 AND (circuit_state <> 'closed' OR consecutive_failures > 0)`,
+        [endpointId],
+      )
     } else {
       const snapshot = await readBreakerForUpdate(client, endpointId)
-      const transition = nextOnFailure(snapshot, Date.now(), breakerThreshold)
+      const transition = nextOnFailure(snapshot, nowMs, breakerThreshold)
       if (transition.write) {
         // failing_since stays the FIRST failure's time (COALESCE).
         await client.query(
@@ -142,7 +150,7 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
             endpointId,
             transition.next.circuit,
             transition.next.consecutiveFailures,
-            new Date(),
+            new Date(nowMs),
             transition.next.openedAtMs !== null ? new Date(transition.next.openedAtMs) : null,
           ],
         )

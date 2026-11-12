@@ -81,6 +81,7 @@ async function claimOn(client: PoolClient, options: ClaimOptions): Promise<Claim
      ranked AS (
         SELECT d.id,
                d.endpoint_id,
+               d.next_attempt_at,
                row_number() OVER (
                  PARTITION BY d.endpoint_id
                  ORDER BY d.next_attempt_at, d.id
@@ -106,7 +107,11 @@ async function claimOn(client: PoolClient, options: ClaimOptions): Promise<Claim
        SELECT id, endpoint_id, probe
        FROM ranked
        WHERE rn <= claim_limit
-       ORDER BY id
+       -- Oldest due first ACROSS endpoints too (I3): id is a random UUID,
+       -- so ordering by it chose endpoints at random whenever the backlog
+       -- exceeded the batch, letting a long-overdue delivery wait behind
+       -- newer ones.
+       ORDER BY next_attempt_at, id
        LIMIT $4
      )
      UPDATE deliveries d
