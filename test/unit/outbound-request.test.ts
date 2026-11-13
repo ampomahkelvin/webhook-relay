@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildOutboundRequest } from '../../src/domain/outbound-request.js'
 import { signWebhook } from '../../src/domain/signing.js'
-import { InvalidEndpointUrlError } from '../../src/security/validate-endpoint-url.js'
+import { InvalidEndpointUrlError } from '../../src/domain/endpoint-url.js'
 
 const SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw'
 const EVENT = {

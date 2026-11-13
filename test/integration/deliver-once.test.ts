@@ -7,9 +7,9 @@ import {
   decodeEncryptionKey,
   decryptSecret,
   encryptSecret,
-} from '../../src/security/crypto.js'
+} from '../../src/infra/secret-box.js'
 import { buildOutboundRequest } from '../../src/domain/outbound-request.js'
-import { sendThroughSsrfClient } from '../../src/security/ssrf-client.js'
+import { sendThroughSsrfClient } from '../../src/infra/ssrf-client.js'
 import { classifyAttempt } from '../../src/domain/classify.js'
 import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'

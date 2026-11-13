@@ -6,12 +6,12 @@ import { TokenBucket } from '../rate-limit.js'
 import { canonicalJson } from '../../util/canonical-json.js'
 import { isUuid } from '../../util/uuid.js'
 import type { Metrics } from '../../observability/metrics.js'
-import { requireTenantContext } from '../../auth/tenant-auth.js'
+import { requireTenantContext } from '../auth/tenant-auth.js'
 import {
   EVENT_TYPE_PATTERN,
   MAX_EVENT_TYPE_LENGTH,
   MAX_PAYLOAD_BYTES,
-} from '../../db/vocabulary.js'
+} from '../../domain/vocabulary.js'
 import { getEvent, requestHash, resolveReplay, submitIntake } from '../../db/events.js'
 import { listDeliveriesForEvent } from '../../db/deliveries.js'
 import { deliveryJson, eventJson } from '../serialize.js'
@@ -117,7 +117,8 @@ export function eventsRouter(pool: Pool, options: IntakeOptions): Router {
         id: replayId,
         deliveries: Number(resolved.replay_deliveries ?? 0),
       })
-    options.metrics?.eventReceived()
+    // No eventReceived() here: this is a REPLAY of an event that was
+    // already counted at intake, not a new one.
   })
 
   router.get('/events/:id', async (req: Request, res: Response) => {

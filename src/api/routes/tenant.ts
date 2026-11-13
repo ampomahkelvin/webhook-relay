@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import type { Pool } from 'pg'
-import { requireTenantAuth } from '../../auth/tenant-auth.js'
+import { requireTenantAuth } from '../auth/tenant-auth.js'
 import { endpointRouter, type EndpointRouterOptions } from './endpoints.js'
 import { eventsRouter, type IntakeOptions } from './events.js'
 import { deliveriesRouter } from './deliveries.js'
@@ -26,6 +26,7 @@ export function tenantRouter(pool: Pool, options: TenantRouterOptions): Router {
     endpointRouter(pool, {
       maxEndpointsPerTenant: options.maxEndpointsPerTenant,
       allowInsecureHttp: options.allowInsecureHttp,
+      allowPrivateTargets: options.allowPrivateTargets,
       encryptionKey: options.encryptionKey,
     }),
   )

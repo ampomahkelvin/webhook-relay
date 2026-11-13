@@ -1,16 +1,16 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import type { Pool } from 'pg'
 import type { Logger } from '../logger.js'
-import { loadConfig } from '../config/index.js'
-import { createLogger } from '../logger.js'
-import { createPool } from './pool.js'
 
 const MIGRATIONS_TABLE = 'schema_migrations'
-const DEFAULT_MIGRATIONS_DIR = 'migrations'
+export const DEFAULT_MIGRATIONS_DIR = 'migrations'
 
-/** Applies every not-yet-applied .sql file from `dir`, oldest first, in one transaction. */
+/**
+ * Applies every not-yet-applied .sql file from `dir`, oldest first, in one
+ * transaction. The migration SQL lives in this db module; the CLI that
+ * drives it is `src/main/migrate.ts`.
+ */
 export async function applyMigrations(
   pool: Pool,
   dir: string = DEFAULT_MIGRATIONS_DIR,
@@ -50,24 +50,4 @@ export async function applyMigrations(
   } finally {
     client.release()
   }
-}
-
-/** CLI entry: `npm run migrate`. */
-export async function runAsCli(): Promise<void> {
-  const config = loadConfig()
-  const log = createLogger('migrate', config.logLevel)
-  const pool = createPool(config.databaseUrl)
-  try {
-    const applied = await applyMigrations(pool, DEFAULT_MIGRATIONS_DIR, log)
-    log.info({ applied: applied.length }, 'migrations up to date')
-  } finally {
-    await pool.end()
-  }
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runAsCli().catch((error) => {
-    console.error(error)
-    process.exit(1)
-  })
 }

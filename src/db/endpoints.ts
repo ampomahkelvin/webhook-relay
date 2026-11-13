@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { CircuitState, DisabledReason, EndpointStatus } from './vocabulary.js'
+import type { CircuitState, DisabledReason, EndpointStatus } from '../domain/vocabulary.js'
 
 /**
  * The `endpoints` table's queries. Every statement carries the tenant

@@ -1,6 +1,6 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import type { Pool } from 'pg'
-import { applyMigrations } from '../../src/db/migrate.js'
+import { applyMigrations } from '../../src/db/migrations.js'
 import { createPool } from '../../src/db/pool.js'
 import { join } from 'node:path'
 

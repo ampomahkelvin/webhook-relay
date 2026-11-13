@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import request from 'supertest'
 import { createReceiverApp } from '../../examples/receiver/server.js'
 import { signWebhook } from '../../src/domain/signing.js'
-import { createSigningSecret } from '../../src/security/crypto.js'
+import { createSigningSecret } from '../../src/infra/secret-box.js'
 
 /**
  * The sample receiver's secret handling (examples/receiver): one startup

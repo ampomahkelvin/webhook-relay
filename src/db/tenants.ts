@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg'
 /**
  * The `tenants` and `api_keys` tables' queries and row shapes: the admin
  * namespace's data access. Keys are SHA-256 hashes and are handled by
- * `src/auth/api-keys.ts`; this module persists, looks up, and lists rows
+ * `src/domain/api-keys.ts`; this module persists, looks up, and lists rows
  * only.
  */
 

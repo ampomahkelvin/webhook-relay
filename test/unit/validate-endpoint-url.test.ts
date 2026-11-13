@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateEndpointUrl } from '../../src/security/validate-endpoint-url.js'
+import { InvalidEndpointUrlError, validateEndpointUrl } from '../../src/domain/endpoint-url.js'
 
 describe('validateEndpointUrl (layer 1)', () => {
   it('accepts normal HTTPS URLs', () => {
@@ -42,6 +42,35 @@ describe('validateEndpointUrl (layer 1)', () => {
     expect(() => validateEndpointUrl('https://169.254.169.254/latest')).toThrow(/blocked range/)
     expect(() => validateEndpointUrl('https://10.0.0.5/hook')).toThrow(/blocked range/)
     expect(() => validateEndpointUrl('https://192.168.1.4/hook')).toThrow(/blocked range/)
+  })
+
+  it('blocked literal IPs fail with a machine-readable blocked_address code', () => {
+    try {
+      validateEndpointUrl('https://10.0.0.5/hook')
+      expect.unreachable('expected a throw')
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidEndpointUrlError)
+      expect((error as InvalidEndpointUrlError).code).toBe('blocked_address')
+    }
+    try {
+      validateEndpointUrl('https://user:pass@example.com/hook')
+      expect.unreachable('expected a throw')
+    } catch (error) {
+      expect((error as InvalidEndpointUrlError).code).toBe('invalid_url')
+    }
+  })
+
+  it('allowPrivateTargets honors the dev flag for literal IPs (layer 2 still enforces per attempt)', () => {
+    expect(validateEndpointUrl('https://10.0.0.5/hook', { allowPrivateTargets: true })).toBe(
+      'https://10.0.0.5/hook',
+    )
+    expect(validateEndpointUrl('https://[::1]/hook', { allowPrivateTargets: true })).toBe(
+      'https://[::1]/hook',
+    )
+    // The rest of the policy is NOT relaxed by the flag.
+    expect(() =>
+      validateEndpointUrl('https://user:pass@example.com/hook', { allowPrivateTargets: true }),
+    ).toThrow(InvalidEndpointUrlError)
   })
 
   it('rejects WHATWG-normalized IP tricks', () => {

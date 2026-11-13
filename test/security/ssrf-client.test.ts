@@ -4,7 +4,7 @@ import { createServer as createHttpsServer } from 'node:https'
 import type { AddressInfo } from 'node:net'
 import type { Socket } from 'node:net'
 import { generate } from 'selfsigned'
-import { sendThroughSsrfClient, type ResolvedAddress } from '../../src/security/ssrf-client.js'
+import { sendThroughSsrfClient, type ResolvedAddress } from '../../src/infra/ssrf-client.js'
 
 /**
  * Real sockets, loopback, real client. The dev escape hatch

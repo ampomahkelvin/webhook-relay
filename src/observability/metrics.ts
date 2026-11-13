@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import { fetchQueueGauges, type QueueGauges } from '../db/deliveries.js'
+import { fetchQueueGauges, type QueueGauges } from '../db/queue-stats.js'
 
 /**
  * Prometheus text-format metrics with NO client library (DESIGN section

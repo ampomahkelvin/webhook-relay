@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Pool } from 'pg'
-import { recordAttempt, type RecordParams } from '../../src/dispatcher/record.js'
+import { recordAttempt, type RecordParams } from '../../src/db/delivery-queue.js'
 import { startTestDatabase, type TestDatabase } from '../helpers/test-db.js'
 import { seedWorkload, type SeedWorkload } from '../helpers/seed.js'
 
@@ -94,11 +94,11 @@ describe('recordAttempt', () => {
     const result = await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
-      outcome: 'succeeded',
+      outcome: { kind: 'succeeded' },
       startedAtMs: T(0),
       durationMs: 140,
       statusCode: 200,
-      responseSnippet: Buffer.from('{"received":true}'),
+      responseSnippet: '{"received":true}',
     })
     expect(result).toEqual({ applied: true })
 
@@ -119,12 +119,11 @@ describe('recordAttempt', () => {
     const result = await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
-      outcome: 'retry',
-      nextAttemptAtMs: T(5 * 60_000),
+      outcome: { kind: 'retry', nextAttemptAtMs: T(5 * 60_000) },
       startedAtMs: T(0),
       durationMs: 250,
       statusCode: 500,
-      responseSnippet: Buffer.from('boom'),
+      responseSnippet: 'boom',
     })
     expect(result).toEqual({ applied: true })
 
@@ -143,11 +142,11 @@ describe('recordAttempt', () => {
     const result = await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
-      outcome: 'dead',
+      outcome: { kind: 'dead', reason: 'schedule_exhausted' },
       startedAtMs: T(0),
       durationMs: 90,
       statusCode: 410,
-      responseSnippet: Buffer.from('gone'),
+      responseSnippet: 'gone',
     })
     expect(result).toEqual({ applied: true })
     const row = await loadDelivery(db.pool, id)
@@ -162,11 +161,11 @@ describe('recordAttempt', () => {
     await rec(workload, {
       deliveryId: id,
       claimedAttempt: 1,
-      outcome: 'succeeded',
+      outcome: { kind: 'succeeded' },
       startedAtMs: T(0),
       durationMs: 10,
       statusCode: 200,
-      responseSnippet: Buffer.alloc(2000, 'x'),
+      responseSnippet: 'x'.repeat(2000),
     })
     const attempt = await attemptRow(db.pool, id, 1)
     expect(attempt?.response_snippet?.length).toBe(1024)
@@ -179,12 +178,11 @@ describe('recordAttempt', () => {
       await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
-        outcome: 'retry',
-        nextAttemptAtMs: T(60_000),
+        outcome: { kind: 'retry', nextAttemptAtMs: T(60_000) },
         startedAtMs: T(0),
         durationMs: 5,
         statusCode: 503,
-        responseSnippet: Buffer.from('again'),
+        responseSnippet: 'again',
       })
     }
     const count = await db.pool.query<{ n: string }>(
@@ -206,7 +204,7 @@ describe('recordAttempt', () => {
       const result = await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
-        outcome: 'succeeded',
+        outcome: { kind: 'succeeded' },
         startedAtMs: T(30_000),
         durationMs: 60,
         statusCode: 200,
@@ -229,7 +227,7 @@ describe('recordAttempt', () => {
       const fresh = await rec(workload, {
         deliveryId: id,
         claimedAttempt: 2,
-        outcome: 'succeeded',
+        outcome: { kind: 'succeeded' },
         startedAtMs: T(40_000),
         durationMs: 30,
         statusCode: 204,
@@ -244,7 +242,7 @@ describe('recordAttempt', () => {
       await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
-        outcome: 'succeeded',
+        outcome: { kind: 'succeeded' },
         startedAtMs: T(0),
         durationMs: 5,
         statusCode: 200,
@@ -253,8 +251,7 @@ describe('recordAttempt', () => {
       const again = await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
-        outcome: 'retry',
-        nextAttemptAtMs: T(120_000),
+        outcome: { kind: 'retry', nextAttemptAtMs: T(120_000) },
         startedAtMs: T(10),
         durationMs: 5,
         statusCode: 500,

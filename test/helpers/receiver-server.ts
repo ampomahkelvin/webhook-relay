@@ -1,7 +1,7 @@
 import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { createReceiverApp, type ReceivedWebhook } from '../../examples/receiver/server.js'
-import { createSigningSecret } from '../../src/security/crypto.js'
+import { createSigningSecret } from '../../src/infra/secret-box.js'
 
 export interface ReceiverHandle {
   port: number

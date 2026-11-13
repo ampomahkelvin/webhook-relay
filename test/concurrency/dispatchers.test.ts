@@ -175,7 +175,7 @@ describe('a dispatcher killed mid-send', () => {
       const deliveryId = seed.deliveryIds[0]!
 
       // The child dispatcher claims the delivery and starts the hung send.
-      const child: ChildProcess = spawn('npx', ['tsx', 'src/dispatcher/index.ts'], {
+      const child: ChildProcess = spawn('npx', ['tsx', 'src/main/dispatcher.ts'], {
         cwd: process.cwd(),
         env: {
           ...process.env,

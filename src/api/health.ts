@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import type { Pool } from 'pg'
-import { fetchQueueGauges } from '../db/deliveries.js'
+import { fetchQueueGauges } from '../db/queue-stats.js'
 import { healthHandler } from '../observability/control-routes.js'
 
 export interface DeepHealthOptions {

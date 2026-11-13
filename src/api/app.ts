@@ -10,8 +10,8 @@ import { adminRouter } from './routes/admin.js'
 import { tenantRouter } from './routes/tenant.js'
 import { Metrics } from '../observability/metrics.js'
 import { metricsHandler } from '../observability/control-routes.js'
-import { BODY_LIMIT_BYTES } from '../db/vocabulary.js'
-import type { TenantContext } from '../auth/tenant-auth.js'
+import { BODY_LIMIT_BYTES } from '../domain/vocabulary.js'
+import type { TenantContext } from './auth/tenant-auth.js'
 
 declare module 'express-serve-static-core' {
   interface Request {
@@ -90,6 +90,7 @@ export function createApp({
     tenantRouter(pool, {
       maxEndpointsPerTenant,
       allowInsecureHttp,
+      allowPrivateTargets,
       encryptionKey,
       ratePerMinute: intake.ratePerMinute,
       burst: intake.burst,

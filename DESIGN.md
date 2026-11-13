@@ -225,6 +225,7 @@ JOIN endpoints e ON e.tenant_id = $1
 - **Concurrent duplicates:** the second insert waits on the unique index, then takes the replay path. (Requires `READ COMMITTED`.)
 - **Endpoints that are `disabled` get no delivery.** Endpoints whose breaker is open still get deliveries; they queue until the breaker allows sending.
 - **Limits:** payload at most 256 KB (enforced at the body parser), JSON object only, per-tenant token-bucket rate limit (in memory in v1; Redis if the API is scaled out).
+- **Payload fidelity is JSON-level, not byte-level.** The body is parsed by `express.json`, stored as `jsonb`, and re-serialized on delivery. That means (1) numbers beyond `2^53 − 1` lose precision — a 64-bit numeric ID such as `9007199254740993` arrives as `9007199254740992`, and the signature still verifies (it signs what was sent, so the receiver cannot detect it); (2) key order and whitespace are normalized (`jsonb` semantics); (3) the delivered body is the canonical serialization, not the producer's bytes. **Producers must send 64-bit identifiers as strings** — the same convention every webhook provider documents. Changing this (storing the original text alongside the `jsonb`) is a deliberate schema change, not a fix.
 
 ---
 
@@ -268,6 +269,8 @@ RETURNING d.id, d.event_id, d.endpoint_id, d.attempt_count;
 - `attempt_count` is incremented at claim time, so the claimed number is this attempt's identity.
 - **Lease length** is the request timeout plus a margin (default 60 s). If a dispatcher dies mid-send, the lease expires and the delivery is claimed again. That is the source of at-least-once duplicates, and it is the correct behavior.
 - **Fairness:** the ranking caps how many deliveries one endpoint can take per batch, so a backlog on one endpoint cannot crowd out others. In-flight leases for an endpoint are subtracted from its capacity.
+- **Oldest due first, across endpoints too:** after the per-endpoint ranking, the batch is taken in `next_attempt_at` order — a long-overdue delivery is never left waiting behind newer ones just because a random UUID sorted first.
+- **Clocks:** the claim statement takes `now` as a parameter (injectable for deterministic tests), and the deployment requirement that goes with it: **all dispatcher hosts must run NTP-synchronized clocks**, because leases and breaker cooldowns are compared against timestamps written by whichever instance claimed. Single-digit-millisecond NTP sync is assumed; a multi-minute skew would shorten or stretch leases and cooldowns accordingly.
 - **Half-open probing:** when an open breaker's cooldown has passed, the claim takes exactly one delivery and moves the endpoint to `half_open` in the same transaction.
 - **Do not sleep when there is more work.** If a claim returns a full batch, the dispatcher claims again immediately, and only sleeps (default 500 ms) when a claim comes back short. (The ledger's relay had a throughput cap of batch size divided by poll interval; this rule avoids it.)
 - A dispatcher runs up to `CONCURRENCY` sends in parallel (default 50) and claims only as many deliveries as it has free slots.

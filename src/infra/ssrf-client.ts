@@ -4,8 +4,8 @@ import { lookup as systemLookup } from 'node:dns'
 import { type LookupFunction } from 'node:net'
 import { promisify } from 'node:util'
 import { isIP } from 'node:net'
-import { isBlockedAddress } from './ip-blocklist.js'
-import { normalizeUrlHostname } from './hostname.js'
+import { isBlockedAddress } from '../domain/ip-blocklist.js'
+import { normalizeUrlHostname } from '../domain/hostname.js'
 
 /**
  * The SSRF-safe outbound client. It sends to URLs tenants registered, so
@@ -13,6 +13,8 @@ import { normalizeUrlHostname } from './hostname.js'
  *
  *  1. The hostname is resolved once per attempt, up front — no cached
  *     answers, no agent connection reuse (reused sockets would skip this).
+ *     The resolution phase is capped (5 s) inside the whole-attempt budget,
+ *     so a hung lookup cannot outlive it.
  *  2. If ANY resolved address is in a blocked range the attempt fails as
  *     `blocked_address` before connecting (the DNS answer may change).
  *  3. The connection is pinned to the validated IP with a custom `lookup`
@@ -24,6 +26,9 @@ import { normalizeUrlHostname } from './hostname.js'
  *  5. TLS certificates are verified by default; tests may supply a `ca`.
  *  6. At most `maxResponseBytes` (default 64 KB) of the body is read, then
  *     the socket is destroyed. Callers store at most 1 KB of it.
+ *  7. A connect-phase failure (no byte reached the wire) falls back to the
+ *     next validated address; every answer was already blocklist-checked,
+ *     so the safety property is unchanged.
  */
 
 export interface ResolvedAddress {
@@ -33,6 +38,8 @@ export interface ResolvedAddress {
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
+/** Ceiling for the DNS resolution phase, inside the whole-attempt budget. */
+const RESOLVE_TIMEOUT_MS = 5_000
 export const DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024
 
 export type ClientErrorKind = 'timeout' | 'connection' | 'dns' | 'tls' | 'blocked_address'
@@ -48,7 +55,19 @@ export type SendResult =
       /** The IP the socket actually connected to (must equal the validated answer). */
       connectedTo: string
     }
-  | { ok: false; kind: ClientErrorKind; message: string; connectedTo?: string }
+  | {
+      ok: false
+      kind: ClientErrorKind
+      message: string
+      connectedTo?: string
+      /**
+       * True when the attempt failed before any byte reached the chosen
+       * address (connect-phase failure). The driver uses it to fall back
+       * to the next validated address — every answer was already checked,
+       * so the safety property is unchanged.
+       */
+      connectPhase?: boolean
+    }
 
 export interface SsrfSendOptions {
   url: string
@@ -99,9 +118,25 @@ function failureKind(error: NodeJS.ErrnoException): ClientErrorKind {
   return 'connection'
 }
 
+/** Reject a promise when `promise` has not settled within `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new AttemptTimeoutError(message)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
 export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<SendResult> {
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
-  const connectTimeoutMs = Math.min(DEFAULT_CONNECT_TIMEOUT_MS, requestTimeoutMs)
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES
 
   // A URL that fails here is an endpoint-configuration problem, not an
@@ -117,6 +152,11 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
   const port = targetUrl.port === '' ? (isTls ? 443 : 80) : Number(targetUrl.port)
   const path = `${targetUrl.pathname}${targetUrl.search}` || '/'
 
+  // The whole-attempt budget covers resolution TOO (it used to start only
+  // at the request, so a hung lookup could outlive the 10 s — I4).
+  const attemptStartedAt = Date.now()
+  const remainingMs = (): number => Math.max(1, requestTimeoutMs - (Date.now() - attemptStartedAt))
+
   // --- Resolve ONCE, before any socket exists. ---
   const literalFamily = isIP(hostname)
   let answers: ResolvedAddress[]
@@ -124,8 +164,16 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
     answers = [{ address: hostname, family: literalFamily === 6 ? 6 : 4 }]
   } else {
     try {
-      answers = await (options.resolveAddresses ?? defaultResolve)(hostname)
+      const resolver = options.resolveAddresses ?? defaultResolve
+      answers = await withTimeout(
+        resolver(hostname),
+        Math.min(RESOLVE_TIMEOUT_MS, requestTimeoutMs),
+        `DNS resolution for '${hostname}' exceeded its budget`,
+      )
     } catch (error) {
+      if (error instanceof AttemptTimeoutError) {
+        return { ok: false, kind: 'timeout', message: error.message }
+      }
       return {
         ok: false,
         kind: 'dns',
@@ -149,7 +197,57 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
       }
     }
   }
-  const chosen = answers[0] as ResolvedAddress
+
+  // --- Try the validated addresses in order until one connects. ---
+  let last: SendResult | undefined
+  for (let index = 0; index < answers.length; index++) {
+    const chosen = answers[index] as ResolvedAddress
+    const triesLeft = answers.length - index
+    const budget = remainingMs()
+    last = await connectAndSend({
+      chosen,
+      hostname,
+      port,
+      path,
+      isTls,
+      budgetMs: budget,
+      // One hanging address must not consume the whole attempt: the
+      // remaining budget is shared across the remaining tries.
+      connectTimeoutMs: Math.min(
+        DEFAULT_CONNECT_TIMEOUT_MS,
+        Math.max(1, Math.floor(budget / triesLeft)),
+      ),
+      options,
+      maxResponseBytes,
+    })
+    // A connect-phase failure means no byte reached the wire: the next
+    // validated address (checked by the same blocklist pass above) is a
+    // safe fallback — typically an unreachable IPv6 answer ahead of a
+    // working IPv4 one on a host without IPv6 routing (those hang rather
+    // than refuse, so the connect timer's timeout qualifies too). The
+    // remaining budget is divided across the remaining tries, so one
+    // hanging address cannot consume the whole attempt.
+    if (last.ok || last.connectPhase !== true) return last
+  }
+  return last as SendResult
+}
+
+interface ConnectAndSendArgs {
+  chosen: ResolvedAddress
+  hostname: string
+  port: number
+  path: string
+  isTls: boolean
+  /** Whole-attempt budget REMAINING for this connection. */
+  budgetMs: number
+  connectTimeoutMs: number
+  options: SsrfSendOptions
+  maxResponseBytes: number
+}
+
+/** One pinned connection to one validated address. Never falls back. */
+async function connectAndSend(args: ConnectAndSendArgs): Promise<SendResult> {
+  const { chosen, hostname, port, path, isTls, budgetMs, connectTimeoutMs, options } = args
 
   return await new Promise<SendResult>((resolve) => {
     // Per-request agent with keepAlive off: the next attempt must resolve
@@ -161,6 +259,8 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
 
     let settled = false
     let gotHeaders = false
+    let connected = false
+    let connectTimedOut = false
     let connectedTo: string | undefined
     const chunks: Buffer[] = []
     let bytesRead = 0
@@ -178,7 +278,18 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
       if (settled) return true
       settled = true
       cleanup()
-      resolve({ ok: false, kind, message, connectedTo })
+      resolve({
+        ok: false,
+        kind,
+        message,
+        connectedTo,
+        // Connect-phase = no byte reached the wire AND the failure is of
+        // the connect itself (a refused/reset connection, or the connect
+        // timer firing) — the driver may then try the next validated
+        // address. A whole-attempt budget timeout is NOT one: retrying
+        // would only burn the remaining budget.
+        connectPhase: !connected && !gotHeaders && (kind === 'connection' || connectTimedOut),
+      })
       return false
     }
     const succeed = (statusCode: number, headers: IncomingMessage['headers']) => {
@@ -196,7 +307,9 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
       })
     }
 
-    const timeoutError = new AttemptTimeoutError('attempt exceeded its time budget')
+    const connectTimeoutError = new AttemptTimeoutError('connecting exceeded its time budget')
+    const attemptTimeoutError = new AttemptTimeoutError('attempt exceeded its time budget')
+    let attemptTimedOut = false
 
     // The pin: whatever hostname node asks for, this lookup returns the
     // validated address — so no second DNS resolution can happen.
@@ -230,12 +343,23 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
         })
 
     req.on('socket', (socket) => {
-      timers.push(setTimeout(() => req.destroy(timeoutError), connectTimeoutMs))
+      timers.push(
+        setTimeout(() => {
+          connectTimedOut = true
+          req.destroy(connectTimeoutError)
+        }, connectTimeoutMs),
+      )
       socket.once('connect', () => {
+        connected = true
         connectedTo = socket.remoteAddress ?? chosen.address
       })
     })
-    timers.push(setTimeout(() => req.destroy(timeoutError), requestTimeoutMs))
+    timers.push(
+      setTimeout(() => {
+        attemptTimedOut = true
+        req.destroy(attemptTimeoutError)
+      }, budgetMs),
+    )
 
     req.on('error', (error: NodeJS.ErrnoException) => {
       fail(failureKind(error), error.message)
@@ -251,7 +375,7 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
       let truncationStopped = false
 
       res.on('data', (chunk: Buffer) => {
-        const remaining = maxResponseBytes - bytesRead
+        const remaining = args.maxResponseBytes - bytesRead
         if (remaining <= 0) {
           if (!truncationStopped) {
             truncationStopped = true
@@ -266,15 +390,21 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
           return
         }
         chunks.push(chunk.subarray(0, remaining))
-        bytesRead = maxResponseBytes
+        bytesRead = args.maxResponseBytes
         truncated = true
         truncationStopped = true
         res.destroy()
       })
 
       res.on('error', () => {
-        // Our own destroy at the read cap is not an error of the attempt.
+        // Our own destroy at the read cap is not an error of the attempt;
+        // a budget timeout that fires during the body is a TIMEOUT, not a
+        // connection drop (it is what destroyed the socket).
         if (truncationStopped) return
+        if (attemptTimedOut) {
+          fail('timeout', attemptTimeoutError.message)
+          return
+        }
         fail('connection', 'connection dropped during the response')
       })
 
@@ -286,6 +416,10 @@ export async function sendThroughSsrfClient(options: SsrfSendOptions): Promise<S
         if (settled) return
         if (truncationStopped) {
           succeed(statusCode, res.headers)
+          return
+        }
+        if (attemptTimedOut) {
+          fail('timeout', attemptTimeoutError.message)
           return
         }
         fail('connection', 'connection closed before the response finished')

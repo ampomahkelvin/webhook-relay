@@ -1,15 +1,33 @@
-import { decodeEncryptionKey, decryptSecret } from '../security/crypto.js'
+import { decodeEncryptionKey, decryptSecret } from '../infra/secret-box.js'
 import {
   sendThroughSsrfClient,
   DEFAULT_MAX_RESPONSE_BYTES,
   type SendResult,
-} from '../security/ssrf-client.js'
+} from '../infra/ssrf-client.js'
 import { buildOutboundRequest } from '../domain/outbound-request.js'
 import { classifyAttempt, type AttemptOutcome, type HttpLikeHeaders } from '../domain/classify.js'
-import type { DeliveryDetails } from './claim.js'
+import { InvalidEndpointUrlError } from '../domain/endpoint-url.js'
+import type { ErrorKind } from '../domain/vocabulary.js'
+import type { DeliveryDetails } from '../db/delivery-queue.js'
 
 /** Cap of the stored response snippet (DESIGN: at most 1 KB). */
 const MAX_SNIPPET_BYTES = 1024
+
+/**
+ * Postgres `text` accepts only valid UTF-8 without NUL bytes, so a raw
+ * body slice must not go to the record statement as bytes: a body cut in
+ * the middle of a multi-byte character at the 1 KB boundary, binary or
+ * compressed bytes (e.g. gzip), or a NUL would make the attempt's INSERT
+ * throw — and (before this sanitizer) a thrown record looked like a worker
+ * error, re-sending a delivery the receiver had already answered.
+ *
+ * Truncate in bytes FIRST, then decode leniently: an invalid sequence
+ * becomes U+FFFD (never an error), and NUL becomes U+FFFD too. The result
+ * is a string Postgres always accepts, at most `maxBytes` characters.
+ */
+export function toSnippet(bytes: Buffer, maxBytes = MAX_SNIPPET_BYTES): string {
+  return bytes.subarray(0, maxBytes).toString('utf8').replaceAll('\u0000', '\uFFFD')
+}
 
 /**
  * One attempt: build, sign, send through the SSR-safe client, classify
@@ -28,9 +46,9 @@ export interface SendCallOptions {
 export interface AttemptSent {
   outcome: AttemptOutcome
   statusCode?: number
-  errorKind?: string
-  /** Response snippet, already capped for storage (DESIGN: at most 1 KB). */
-  snippet?: Buffer
+  errorKind?: ErrorKind
+  /** Response snippet, already sanitized for storage (DESIGN: at most 1 KB). */
+  snippet?: string
   startedAtMs: number
   durationMs: number
   /**
@@ -50,8 +68,8 @@ export async function sendDeliveryAttempt(
   type WireResult = {
     statusCode?: number
     headers?: HttpLikeHeaders
-    kind?: string
-    snippet?: Buffer
+    kind?: ErrorKind
+    snippet?: string
   }
   let response: WireResult
   let internalError: string | undefined
@@ -69,7 +87,10 @@ export async function sendDeliveryAttempt(
         payload: details.payload,
       },
       { url: details.endpointUrl, secret },
-      { allowInsecureHttp: options.allowInsecureHttp },
+      {
+        allowInsecureHttp: options.allowInsecureHttp,
+        allowPrivateTargets: options.allowPrivateTargets,
+      },
     )
     const result: SendResult = await sendThroughSsrfClient({
       url: request.target.toString(),
@@ -84,7 +105,7 @@ export async function sendDeliveryAttempt(
       response = {
         statusCode: result.statusCode,
         headers: result.headers,
-        snippet: result.snippet.subarray(0, MAX_SNIPPET_BYTES),
+        snippet: toSnippet(result.snippet),
       }
     } else {
       response = { kind: result.kind }
@@ -92,15 +113,20 @@ export async function sendDeliveryAttempt(
   } catch (error) {
     // Endpoint-configuration problems (invalid URL, bad secret) fail the
     // attempt like a transport error and are retried on the schedule —
-    // but with the reason visible instead of collapsed into the kind.
-    response = { kind: 'connection' }
+    // but with the reason visible instead of collapsed into the kind. A
+    // blocked literal IP keeps its own kind so ops can tell it apart.
+    if (error instanceof InvalidEndpointUrlError && error.code === 'blocked_address') {
+      response = { kind: 'blocked_address' }
+    } else {
+      response = { kind: 'connection' }
+    }
     internalError = (error as Error).message
   }
 
   const durationMs = Date.now() - startedAtMs
   const outcome = classifyAttempt({
     statusCode: response.statusCode,
-    errorKind: response.kind as never,
+    errorKind: response.kind,
     headers: response.headers,
   })
   return {

@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import type { NextFunction, Request, Response } from 'express'
-import { AppError } from '../api/errors.js'
+import { AppError } from '../../domain/errors.js'
 import { bearerToken, type AuthMiddleware } from './bearer.js'
 
 function secureEqual(a: string, b: string): boolean {

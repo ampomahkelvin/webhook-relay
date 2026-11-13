@@ -1,4 +1,4 @@
-import type { CircuitState, DisabledReason, EndpointStatus } from '../db/vocabulary.js'
+import type { CircuitState, DisabledReason, EndpointStatus } from '../domain/vocabulary.js'
 import type { EndpointRow } from '../db/endpoints.js'
 import type { AttemptRow, DeliveryRow } from '../db/deliveries.js'
 import type { EventRow } from '../db/events.js'

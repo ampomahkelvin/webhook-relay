@@ -5,7 +5,7 @@ import {
   runMaintenanceSweep,
   MAINTENANCE_LOCK_ID,
   type SweepOptions,
-} from '../../src/maintenance/sweep.js'
+} from '../../src/db/maintenance.js'
 import {
   startTestApp,
   TEST_ADMIN_KEY,

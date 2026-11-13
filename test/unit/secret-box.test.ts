@@ -4,7 +4,7 @@ import {
   decryptSecret,
   decodeEncryptionKey,
   encryptSecret,
-} from '../../src/security/crypto.js'
+} from '../../src/infra/secret-box.js'
 
 const KEY = '/nfxwkRb9px9u/baXe41g2X1qA/v6ADr22Cj1mfkJ1k='
 
