@@ -8,7 +8,7 @@ import { buildOutboundRequest } from '../domain/outbound-request.js'
 import { classifyAttempt, type AttemptOutcome, type HttpLikeHeaders } from '../domain/classify.js'
 import { InvalidEndpointUrlError } from '../domain/endpoint-url.js'
 import type { ErrorKind } from '../domain/vocabulary.js'
-import type { DeliveryDetails } from '../db/delivery-queue.js'
+import type { DeliveryDetails } from '../db/delivery-details.js'
 
 /** Cap of the stored response snippet (DESIGN: at most 1 KB). */
 const MAX_SNIPPET_BYTES = 1024

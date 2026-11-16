@@ -1,10 +1,7 @@
 import type { Pool } from '../db/pool.js'
-import {
-  recordAttempt,
-  type ClaimedDelivery,
-  type DeliveryDetails,
-  type RecordOutcome,
-} from '../db/delivery-queue.js'
+import type { ClaimedDelivery } from '../db/delivery-claim.js'
+import type { DeliveryDetails } from '../db/delivery-details.js'
+import { recordAttempt, type RecordOutcome } from '../db/delivery-record.js'
 import type { Logger } from '../logger.js'
 import { sendDeliveryAttempt } from './send.js'
 import { decideOutcome, statsKeyOf } from './decide-outcome.js'

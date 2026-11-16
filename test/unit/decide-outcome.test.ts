@@ -5,7 +5,8 @@ import {
 } from '../../src/domain/retry-schedule.js'
 import { decideOutcome } from '../../src/dispatcher/decide-outcome.js'
 import type { AttemptSent } from '../../src/dispatcher/send.js'
-import type { ClaimedDelivery, DeliveryDetails } from '../../src/db/delivery-queue.js'
+import type { ClaimedDelivery } from '../../src/db/delivery-claim.js'
+import type { DeliveryDetails } from '../../src/db/delivery-details.js'
 
 const NOW = 1_700_000_000_000
 const DURATION = 10

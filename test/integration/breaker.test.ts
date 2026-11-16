@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { claimDueDeliveries } from '../../src/db/delivery-queue.js'
-import { recordAttempt } from '../../src/db/delivery-queue.js'
+import { claimDueDeliveries } from '../../src/db/delivery-claim.js'
+import { recordAttempt } from '../../src/db/delivery-record.js'
 import { startTestDatabase, type TestDatabase } from '../helpers/test-db.js'
 import { endpointState } from '../helpers/endpoint-state.js'
 import { seedWorkload } from '../helpers/seed.js'

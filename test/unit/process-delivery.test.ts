@@ -4,7 +4,8 @@ import type { Logger } from '../../src/logger.js'
 import type { AttemptSent } from '../../src/dispatcher/send.js'
 import type { DispatcherConfig, DispatcherStats } from '../../src/dispatcher/ports.js'
 import { createProcessDelivery } from '../../src/dispatcher/process-delivery.js'
-import type { ClaimedDelivery, DeliveryDetails } from '../../src/db/delivery-queue.js'
+import type { ClaimedDelivery } from '../../src/db/delivery-claim.js'
+import type { DeliveryDetails } from '../../src/db/delivery-details.js'
 
 /**
  * Record-retry budget (N1). The send is stubbed: the budget lives entirely

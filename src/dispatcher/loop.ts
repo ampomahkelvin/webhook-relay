@@ -1,10 +1,7 @@
 import type { Logger } from '../logger.js'
 import type { Pool } from '../db/pool.js'
-import {
-  claimDueDeliveries,
-  fetchDeliveryDetails,
-  type ClaimedDelivery,
-} from '../db/delivery-queue.js'
+import { claimDueDeliveries, type ClaimedDelivery } from '../db/delivery-claim.js'
+import { fetchDeliveryDetails } from '../db/delivery-details.js'
 import { createConcurrencyGate } from './concurrency-gate.js'
 import { createProcessDelivery } from './process-delivery.js'
 import type { DispatcherConfig, DispatcherMetrics, DispatcherStats } from './ports.js'
@@ -15,7 +12,8 @@ export type { DispatcherConfig, DispatcherStats } from './ports.js'
  * The dispatcher loop (DESIGN sections 6.1–6.4). This file drives the
  * delivery lifecycle only; its collaborators own the rules:
  *
- *  - claiming and recording are the statements in `db/delivery-queue.ts`,
+ *  - claiming and recording are the statements in `db/delivery-claim.ts`
+ *    and `db/delivery-record.ts`,
  *    the breaker transitions in `domain/breaker.ts`;
  *  - send + decide + record for ONE delivery is `process-delivery.ts`;
  *  - the outcome decision is the pure `decide-outcome.ts`;

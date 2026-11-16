@@ -1,4 +1,6 @@
-import type { ClaimedDelivery, DeliveryDetails, RecordOutcome } from '../db/delivery-queue.js'
+import type { ClaimedDelivery } from '../db/delivery-claim.js'
+import type { DeliveryDetails } from '../db/delivery-details.js'
+import type { RecordOutcome } from '../db/delivery-record.js'
 import { scheduleNext } from '../domain/retry-schedule.js'
 import type { AttemptSent } from './send.js'
 
