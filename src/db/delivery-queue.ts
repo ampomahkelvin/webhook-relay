@@ -27,6 +27,7 @@
 
 import type { Pool, PoolClient, QueryResult } from 'pg'
 import { nextOnFailure, CLOSED_BREAKER, type BreakerSnapshot } from '../domain/breaker.js'
+import type { ErrorKind } from '../domain/vocabulary.js'
 
 export interface ClaimOptions {
   nowMs: number
@@ -262,7 +263,8 @@ export interface RecordParams {
   startedAtMs: number
   durationMs: number
   statusCode?: number
-  errorKind?: string
+  /** The rest of the pipeline's transport-error vocabulary (CHECK-guarded). */
+  errorKind?: ErrorKind
   /**
    * The response snippet as a storage-safe string (already sanitized by
    * `toSnippet` in send.ts: valid UTF-8, no NUL). Sliced to the column's

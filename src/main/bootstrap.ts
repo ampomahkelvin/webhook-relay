@@ -47,10 +47,20 @@ export function createEntryPool(
   return pool
 }
 
-/** Run `handler` once per received shutdown signal (SIGTERM / SIGINT). */
+/**
+ * Run `handler` once, on the FIRST shutdown signal (SIGTERM or SIGINT) —
+ * repeated signals must not restart the shutdown (N4): the second SIGTERM
+ * used to run `shutdown()` again, and a second `server.close()` errors.
+ * The process is already leaving; extra signals change nothing.
+ */
 export function installSignalHandlers(handler: (signal: 'SIGTERM' | 'SIGINT') => void): void {
+  let shuttingDown = false
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-    process.on(signal, () => handler(signal))
+    process.on(signal, () => {
+      if (shuttingDown) return
+      shuttingDown = true
+      handler(signal)
+    })
   }
 }
 
@@ -60,11 +70,14 @@ export function installSignalHandlers(handler: (signal: 'SIGTERM' | 'SIGINT') =>
  * its stop grace period anyway, so past this timer the process leaves
  * itself. Unref'd, so arming it never keeps a healthy process alive.
  * Clear the returned timer once cleanup has finished.
+ *
+ * Exit code 1 (N4): a shutdown that missed its deadline is a FAILED
+ * shutdown — exiting 0 reported it as a clean one.
  */
 export function armHardExit(logger: Logger, ms = 25_000): NodeJS.Timeout {
   const timer = setTimeout(() => {
-    logger.error({ afterMs: ms }, 'graceful shutdown exceeded its deadline; exiting')
-    process.exit(0)
+    logger.error({ afterMs: ms }, 'graceful shutdown exceeded its deadline; exiting 1')
+    process.exit(1)
   }, ms)
   timer.unref()
   return timer

@@ -32,7 +32,7 @@ export interface SweepOptions extends MaintenanceConfig {
    * Retention batch size (I8): events are deleted in bounded chunks so a
    * large backlog (first run after enabling retention, or after a long
    * downtime) cannot become one huge DELETE holding locks and bloating
-   * tables. Default 5,000.
+   * tables. Default 1,000.
    */
   retentionBatchSize?: number
 }
@@ -45,8 +45,14 @@ export interface SweepResult {
   endpointsDisabled: number
 }
 
-/** Rows per retention DELETE; each batch is its own transaction (I8). */
-const DEFAULT_RETENTION_BATCH = 5_000
+/**
+ * Rows per retention DELETE; each batch is its own transaction (I8).
+ * Deliberately small (N4): every deleted event cascades to its deliveries
+ * and their attempts, so 5,000 events could mean ~800,000 rows in one
+ * statement — 1,000 keeps each transaction short. Tune via
+ * `retentionBatchSize`.
+ */
+const DEFAULT_RETENTION_BATCH = 1_000
 
 /** Constant across the codebase so any instance competes for the same lock. */
 export const MAINTENANCE_LOCK_ID = 781_207_442
