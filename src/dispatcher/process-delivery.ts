@@ -61,11 +61,13 @@ export function createProcessDelivery(
           endpointId: claimed.endpointId,
           breakerThreshold: config.breakerThreshold,
           claimedAttempt: claimed.attemptNumber,
-          startedAtMs: sent.startedAtMs,
-          durationMs: sent.durationMs,
-          statusCode: sent.statusCode,
-          errorKind: sent.errorKind,
-          responseSnippet: sent.snippet,
+          attempt: {
+            startedAtMs: sent.startedAtMs,
+            durationMs: sent.durationMs,
+            statusCode: sent.statusCode,
+            errorKind: sent.errorKind,
+            responseSnippet: sent.snippet,
+          },
           outcome: decided,
           // Same clock as the send: breaker timestamps and completed_at
           // must not drift from the attempt they belong to (I2).

@@ -32,13 +32,12 @@ export type RecordOutcome =
   | { kind: 'retry'; nextAttemptAtMs: number }
   | { kind: 'dead'; reason: 'gone' | 'schedule_exhausted' }
 
-export interface RecordParams {
-  deliveryId: string
-  /** The endpoint this delivery points at; breaker + 410 handling need it. */
-  endpointId: string
-  /** The `attempt_count` this worker claimed; the fencing token. */
-  claimedAttempt: number
-  outcome: RecordOutcome
+/**
+ * The attempt facts ONE send produced: when it started, how long it took,
+ * what came back. Grouped so a record call reads as "this attempt, this
+ * outcome" (review Part 4.4).
+ */
+export interface RecordAttemptFacts {
   startedAtMs: number
   durationMs: number
   statusCode?: number
@@ -51,6 +50,16 @@ export interface RecordParams {
    * a short snippet instead of a failed record.
    */
   responseSnippet?: string
+}
+
+export interface RecordParams {
+  deliveryId: string
+  /** The endpoint this delivery points at; breaker + 410 handling need it. */
+  endpointId: string
+  /** The `attempt_count` this worker claimed; the fencing token. */
+  claimedAttempt: number
+  outcome: RecordOutcome
+  attempt: RecordAttemptFacts
   /** Consecutive-failure count that opens the breaker. */
   breakerThreshold: number
   /**
@@ -69,11 +78,7 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
     endpointId,
     claimedAttempt,
     outcome,
-    startedAtMs,
-    durationMs,
-    statusCode,
-    errorKind,
-    responseSnippet,
+    attempt,
     breakerThreshold,
     nowMs = Date.now(),
   } = params
@@ -90,11 +95,11 @@ export async function recordAttempt(pool: Pool, params: RecordParams): Promise<R
       [
         deliveryId,
         claimedAttempt,
-        new Date(startedAtMs),
-        Math.max(0, Math.min(durationMs, 2_147_483_647)),
-        statusCode ?? null,
-        errorKind ?? null,
-        responseSnippet !== undefined ? responseSnippet.slice(0, 1024) : null,
+        new Date(attempt.startedAtMs),
+        Math.max(0, Math.min(attempt.durationMs, 2_147_483_647)),
+        attempt.statusCode ?? null,
+        attempt.errorKind ?? null,
+        attempt.responseSnippet !== undefined ? attempt.responseSnippet.slice(0, 1024) : null,
       ],
     )
 
