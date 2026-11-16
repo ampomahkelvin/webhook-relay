@@ -38,7 +38,6 @@ export function createProcessDelivery(
   deps: ProcessDeliveryDeps,
 ): (claimed: ClaimedDelivery, details: DeliveryDetails | undefined) => Promise<void> {
   const { pool, config, logger, stats, metrics } = deps
-  const backoffsMs = [...(deps.recordBackoffMs ?? RECORD_BACKOFF_MS)]
 
   /**
    * Record ONE attempt result. A recording failure is NOT a send failure:
@@ -54,6 +53,10 @@ export function createProcessDelivery(
     decided: RecordOutcome,
     sent: Awaited<ReturnType<typeof sendDeliveryAttempt>>,
   ): Promise<void> {
+    // A FRESH budget per delivery (N1): a shared array would be consumed
+    // by the first deliveries to hit a record failure, leaving every later
+    // one to give up immediately and wait out the whole lease.
+    const waits = [...(deps.recordBackoffMs ?? RECORD_BACKOFF_MS)]
     for (;;) {
       try {
         const recorded = await recordAttempt(pool, {
@@ -88,7 +91,7 @@ export function createProcessDelivery(
         }
         return
       } catch (error) {
-        const waitMs = backoffsMs.shift()
+        const waitMs = waits.shift()
         if (waitMs === undefined || deps.isStopping()) {
           logger.error(
             {
