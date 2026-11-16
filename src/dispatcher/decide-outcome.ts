@@ -29,7 +29,13 @@ export function decideOutcome(
   }
   const scheduled = scheduleNext({
     attemptNumber: claimed.attemptNumber - details.cycleStart,
-    nowMs: sent.startedAtMs,
+    // Each delay starts from when the attempt was RECORDED, i.e. its END
+    // (N2), not its start: scheduling from `startedAtMs` would let a slow
+    // receiver's processing time shrink every gap into a retry storm —
+    // an attempt that hung for the full timeout would already be due for
+    // its first retry before it even failed. Same clock recordAttempt
+    // receives from process-delivery.ts.
+    nowMs: sent.startedAtMs + sent.durationMs,
     retryAfterSeconds: sent.outcome.kind === 'retry' ? sent.outcome.retryAfterSeconds : undefined,
     delaysMs,
   })
