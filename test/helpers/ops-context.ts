@@ -1,3 +1,4 @@
+import { expect } from 'vitest'
 import request from 'supertest'
 import type { Pool } from 'pg'
 import type { TestApp } from './test-app.js'

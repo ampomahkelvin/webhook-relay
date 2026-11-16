@@ -1,10 +1,7 @@
 import type { Pool } from '../db/pool.js'
-import {
-  recordAttempt,
-  type ClaimedDelivery,
-  type DeliveryDetails,
-  type RecordOutcome,
-} from '../db/delivery-queue.js'
+import type { ClaimedDelivery } from '../db/delivery-claim.js'
+import type { DeliveryDetails } from '../db/delivery-details.js'
+import { recordAttempt, type RecordOutcome } from '../db/delivery-record.js'
 import type { Logger } from '../logger.js'
 import { sendDeliveryAttempt } from './send.js'
 import { decideOutcome, statsKeyOf } from './decide-outcome.js'
@@ -38,7 +35,6 @@ export function createProcessDelivery(
   deps: ProcessDeliveryDeps,
 ): (claimed: ClaimedDelivery, details: DeliveryDetails | undefined) => Promise<void> {
   const { pool, config, logger, stats, metrics } = deps
-  const backoffsMs = [...(deps.recordBackoffMs ?? RECORD_BACKOFF_MS)]
 
   /**
    * Record ONE attempt result. A recording failure is NOT a send failure:
@@ -54,6 +50,10 @@ export function createProcessDelivery(
     decided: RecordOutcome,
     sent: Awaited<ReturnType<typeof sendDeliveryAttempt>>,
   ): Promise<void> {
+    // A FRESH budget per delivery (N1): a shared array would be consumed
+    // by the first deliveries to hit a record failure, leaving every later
+    // one to give up immediately and wait out the whole lease.
+    const waits = [...(deps.recordBackoffMs ?? RECORD_BACKOFF_MS)]
     for (;;) {
       try {
         const recorded = await recordAttempt(pool, {
@@ -61,11 +61,13 @@ export function createProcessDelivery(
           endpointId: claimed.endpointId,
           breakerThreshold: config.breakerThreshold,
           claimedAttempt: claimed.attemptNumber,
-          startedAtMs: sent.startedAtMs,
-          durationMs: sent.durationMs,
-          statusCode: sent.statusCode,
-          errorKind: sent.errorKind,
-          responseSnippet: sent.snippet,
+          attempt: {
+            startedAtMs: sent.startedAtMs,
+            durationMs: sent.durationMs,
+            statusCode: sent.statusCode,
+            errorKind: sent.errorKind,
+            responseSnippet: sent.snippet,
+          },
           outcome: decided,
           // Same clock as the send: breaker timestamps and completed_at
           // must not drift from the attempt they belong to (I2).
@@ -88,7 +90,7 @@ export function createProcessDelivery(
         }
         return
       } catch (error) {
-        const waitMs = backoffsMs.shift()
+        const waitMs = waits.shift()
         if (waitMs === undefined || deps.isStopping()) {
           logger.error(
             {

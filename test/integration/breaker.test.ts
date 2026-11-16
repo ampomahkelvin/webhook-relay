@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { claimDueDeliveries } from '../../src/db/delivery-queue.js'
-import { recordAttempt } from '../../src/db/delivery-queue.js'
+import { claimDueDeliveries } from '../../src/db/delivery-claim.js'
+import { recordAttempt } from '../../src/db/delivery-record.js'
 import { startTestDatabase, type TestDatabase } from '../helpers/test-db.js'
 import { endpointState } from '../helpers/endpoint-state.js'
 import { seedWorkload } from '../helpers/seed.js'
@@ -32,10 +32,7 @@ const failed = (db: TestDatabase, args: FailArgs) =>
     claimedAttempt: args.claimedAttempt,
     breakerThreshold: args.threshold ?? 3,
     outcome: { kind: 'retry', nextAttemptAtMs: T0 + args.claimedAttempt * 2_000 }, // due 2 s later; claims stagger to match
-    startedAtMs: T0,
-    durationMs: 25,
-    statusCode: 500,
-    responseSnippet: 'kaboom',
+    attempt: { startedAtMs: T0, durationMs: 25, statusCode: 500, responseSnippet: 'kaboom' },
   })
 
 export const succeededAttempt = (db: TestDatabase, args: FailArgs) =>
@@ -45,9 +42,7 @@ export const succeededAttempt = (db: TestDatabase, args: FailArgs) =>
     claimedAttempt: args.claimedAttempt,
     breakerThreshold: args.threshold ?? 3,
     outcome: { kind: 'succeeded' },
-    startedAtMs: T0,
-    durationMs: 25,
-    statusCode: 200,
+    attempt: { startedAtMs: T0, durationMs: 25, statusCode: 200 },
   })
 
 const claim = (

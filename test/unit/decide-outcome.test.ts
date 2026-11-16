@@ -5,9 +5,13 @@ import {
 } from '../../src/domain/retry-schedule.js'
 import { decideOutcome } from '../../src/dispatcher/decide-outcome.js'
 import type { AttemptSent } from '../../src/dispatcher/send.js'
-import type { ClaimedDelivery, DeliveryDetails } from '../../src/db/delivery-queue.js'
+import type { ClaimedDelivery } from '../../src/db/delivery-claim.js'
+import type { DeliveryDetails } from '../../src/db/delivery-details.js'
 
 const NOW = 1_700_000_000_000
+const DURATION = 10
+/** The attempt's end — the clock every schedule delay starts from (N2). */
+const END = NOW + DURATION
 
 const claimed: ClaimedDelivery = {
   id: 'd1',
@@ -29,10 +33,14 @@ const details: DeliveryDetails = {
   cycleStart: 0,
 }
 
-const sent = (outcome: AttemptSent['outcome'], startedAtMs = NOW): AttemptSent => ({
+const sent = (
+  outcome: AttemptSent['outcome'],
+  startedAtMs = NOW,
+  durationMs = DURATION,
+): AttemptSent => ({
   outcome,
   startedAtMs,
-  durationMs: 10,
+  durationMs,
 })
 
 const retryable = sent({ kind: 'retry', errorKind: 'connection' })
@@ -51,14 +59,28 @@ describe('decideOutcome', () => {
     })
   })
 
-  it('a retryable failure schedules from the send clock within the jitter bounds', () => {
+  it('a retryable failure schedules from the attempt END within the jitter bounds', () => {
     const decided = decideOutcome(claimed, details, retryable)
-    // Attempt 3 of the cycle → the 3rd standard delay, jittered ±20%.
+    // Attempt 3 of the cycle → the 3rd standard delay, jittered ±20%,
+    // starting from when the attempt was recorded (its end, N2).
     const base = STANDARD_RETRY_DELAYS_MS[2]!
     expect(decided.kind).toBe('retry')
     if (decided.kind !== 'retry') return
-    expect(decided.nextAttemptAtMs).toBeGreaterThanOrEqual(NOW + base * 0.8)
-    expect(decided.nextAttemptAtMs).toBeLessThan(NOW + base * 1.2)
+    expect(decided.nextAttemptAtMs).toBeGreaterThanOrEqual(END + base * 0.8)
+    expect(decided.nextAttemptAtMs).toBeLessThan(END + base * 1.2)
+  })
+
+  it('a slow-failing attempt still gets its full backoff (N2)', () => {
+    // The attempt hung until the 10 s timeout: the first retry (standard
+    // 5 s delay, jittered ±20%) must come AFTER the attempt's end — never
+    // before it, as it would be if scheduled from the attempt's start.
+    const hung = sent({ kind: 'retry', errorKind: 'timeout' }, NOW, 10_000)
+    const first: ClaimedDelivery = { ...claimed, attemptNumber: 1 }
+    const decided = decideOutcome(first, details, hung)
+    expect(decided.kind).toBe('retry')
+    if (decided.kind !== 'retry') return
+    expect(decided.nextAttemptAtMs).toBeGreaterThanOrEqual(NOW + 10_000 + 5_000 * 0.8)
+    expect(decided.nextAttemptAtMs).toBeLessThan(NOW + 10_000 + 5_000 * 1.2)
   })
 
   it('a single-delay override applies to the first attempt of a cycle', () => {
@@ -67,8 +89,8 @@ describe('decideOutcome', () => {
     const decided = decideOutcome(first, details, retryable, [2_000])
     expect(decided.kind).toBe('retry')
     if (decided.kind !== 'retry') return
-    expect(decided.nextAttemptAtMs).toBeGreaterThanOrEqual(NOW + 1_600)
-    expect(decided.nextAttemptAtMs).toBeLessThan(NOW + 2_400)
+    expect(decided.nextAttemptAtMs).toBeGreaterThanOrEqual(END + 1_600)
+    expect(decided.nextAttemptAtMs).toBeLessThan(END + 2_400)
   })
 
   it(`schedule exhaustion (attempt ${MAX_ATTEMPTS_PER_CYCLE} of the cycle) is dead with reason schedule_exhausted`, () => {
@@ -87,7 +109,7 @@ describe('decideOutcome', () => {
       sent({ kind: 'retry', errorKind: 'connection', retryAfterSeconds: 900 }),
       [1_000],
     )
-    expect(decided).toEqual({ kind: 'retry', nextAttemptAtMs: NOW + 900_000 })
+    expect(decided).toEqual({ kind: 'retry', nextAttemptAtMs: END + 900_000 })
   })
 
   it('dead decisions never carry a next attempt time', () => {

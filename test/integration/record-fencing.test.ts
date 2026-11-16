@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Pool } from 'pg'
-import { recordAttempt, type RecordParams } from '../../src/db/delivery-queue.js'
+import { recordAttempt, type RecordParams } from '../../src/db/delivery-record.js'
 import { startTestDatabase, type TestDatabase } from '../helpers/test-db.js'
 import { seedWorkload, type SeedWorkload } from '../helpers/seed.js'
 
@@ -95,10 +95,12 @@ describe('recordAttempt', () => {
       deliveryId: id,
       claimedAttempt: 1,
       outcome: { kind: 'succeeded' },
-      startedAtMs: T(0),
-      durationMs: 140,
-      statusCode: 200,
-      responseSnippet: '{"received":true}',
+      attempt: {
+        startedAtMs: T(0),
+        durationMs: 140,
+        statusCode: 200,
+        responseSnippet: '{"received":true}',
+      },
     })
     expect(result).toEqual({ applied: true })
 
@@ -120,10 +122,7 @@ describe('recordAttempt', () => {
       deliveryId: id,
       claimedAttempt: 1,
       outcome: { kind: 'retry', nextAttemptAtMs: T(5 * 60_000) },
-      startedAtMs: T(0),
-      durationMs: 250,
-      statusCode: 500,
-      responseSnippet: 'boom',
+      attempt: { startedAtMs: T(0), durationMs: 250, statusCode: 500, responseSnippet: 'boom' },
     })
     expect(result).toEqual({ applied: true })
 
@@ -143,10 +142,7 @@ describe('recordAttempt', () => {
       deliveryId: id,
       claimedAttempt: 1,
       outcome: { kind: 'dead', reason: 'schedule_exhausted' },
-      startedAtMs: T(0),
-      durationMs: 90,
-      statusCode: 410,
-      responseSnippet: 'gone',
+      attempt: { startedAtMs: T(0), durationMs: 90, statusCode: 410, responseSnippet: 'gone' },
     })
     expect(result).toEqual({ applied: true })
     const row = await loadDelivery(db.pool, id)
@@ -162,10 +158,12 @@ describe('recordAttempt', () => {
       deliveryId: id,
       claimedAttempt: 1,
       outcome: { kind: 'succeeded' },
-      startedAtMs: T(0),
-      durationMs: 10,
-      statusCode: 200,
-      responseSnippet: 'x'.repeat(2000),
+      attempt: {
+        startedAtMs: T(0),
+        durationMs: 10,
+        statusCode: 200,
+        responseSnippet: 'x'.repeat(2000),
+      },
     })
     const attempt = await attemptRow(db.pool, id, 1)
     expect(attempt?.response_snippet?.length).toBe(1024)
@@ -179,10 +177,7 @@ describe('recordAttempt', () => {
         deliveryId: id,
         claimedAttempt: 1,
         outcome: { kind: 'retry', nextAttemptAtMs: T(60_000) },
-        startedAtMs: T(0),
-        durationMs: 5,
-        statusCode: 503,
-        responseSnippet: 'again',
+        attempt: { startedAtMs: T(0), durationMs: 5, statusCode: 503, responseSnippet: 'again' },
       })
     }
     const count = await db.pool.query<{ n: string }>(
@@ -205,9 +200,7 @@ describe('recordAttempt', () => {
         deliveryId: id,
         claimedAttempt: 1,
         outcome: { kind: 'succeeded' },
-        startedAtMs: T(30_000),
-        durationMs: 60,
-        statusCode: 200,
+        attempt: { startedAtMs: T(30_000), durationMs: 60, statusCode: 200 },
       })
       expect(result).toEqual({ applied: false, stale: true })
 
@@ -228,9 +221,7 @@ describe('recordAttempt', () => {
         deliveryId: id,
         claimedAttempt: 2,
         outcome: { kind: 'succeeded' },
-        startedAtMs: T(40_000),
-        durationMs: 30,
-        statusCode: 204,
+        attempt: { startedAtMs: T(40_000), durationMs: 30, statusCode: 204 },
       })
       expect(fresh).toEqual({ applied: true })
       expect((await loadDelivery(db.pool, id)).status).toBe('succeeded')
@@ -243,18 +234,14 @@ describe('recordAttempt', () => {
         deliveryId: id,
         claimedAttempt: 1,
         outcome: { kind: 'succeeded' },
-        startedAtMs: T(0),
-        durationMs: 5,
-        statusCode: 200,
+        attempt: { startedAtMs: T(0), durationMs: 5, statusCode: 200 },
       })
       // Same attempt recorded again: the WHERE status = 'pending' misses.
       const again = await rec(workload, {
         deliveryId: id,
         claimedAttempt: 1,
         outcome: { kind: 'retry', nextAttemptAtMs: T(120_000) },
-        startedAtMs: T(10),
-        durationMs: 5,
-        statusCode: 500,
+        attempt: { startedAtMs: T(10), durationMs: 5, statusCode: 500 },
       })
       expect(again).toEqual({ applied: false, stale: true })
       expect((await loadDelivery(db.pool, id)).status).toBe('succeeded')

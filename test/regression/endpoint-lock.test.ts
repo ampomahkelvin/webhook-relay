@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { recordAttempt } from '../../src/db/delivery-queue.js'
+import { recordAttempt } from '../../src/db/delivery-record.js'
 import { startTestDatabase, type TestDatabase } from '../helpers/test-db.js'
 import { seedWorkload, type SeedWorkload } from '../helpers/seed.js'
 
@@ -53,9 +53,7 @@ describe('a healthy success never waits on the endpoint row (I1)', () => {
               breakerThreshold: 5,
               claimedAttempt: 1,
               outcome: { kind: 'succeeded' },
-              startedAtMs: T0,
-              durationMs: 5,
-              statusCode: 200,
+              attempt: { startedAtMs: T0, durationMs: 5, statusCode: 200 },
               nowMs: T0,
             }),
           ),
@@ -118,9 +116,7 @@ describe('a healthy success never waits on the endpoint row (I1)', () => {
       breakerThreshold: 5,
       claimedAttempt: 1,
       outcome: { kind: 'succeeded' },
-      startedAtMs: T0,
-      durationMs: 10,
-      statusCode: 200,
+      attempt: { startedAtMs: T0, durationMs: 10, statusCode: 200 },
       nowMs: T0,
     })
     expect(result).toEqual({ applied: true })

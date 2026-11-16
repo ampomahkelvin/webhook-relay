@@ -364,6 +364,8 @@ The service makes HTTP requests to URLs that tenants control. Without protection
 5. Verify TLS certificates. Set a connect timeout (5 s) and a total timeout (10 s).
 6. Read at most 64 KB of the response, then abort. Store at most 1 KB of it.
 
+**Known trade-off — abandoned DNS lookups:** the 5-second cap on resolution is enforced by a `withTimeout` wrapper, which abandons a slow `getaddrinfo` call but cannot cancel it: the libuv thread stays busy until the OS call returns, and the promise's result is discarded. Under a DNS outage, concurrent sends can therefore pile up waiting for threads. This is accepted, not solved: the dispatcher image sets `UV_THREADPOOL_SIZE=16` so enough threads remain free, and attempts that outlive the budget fail as `timeout` — a hung resolver degrades throughput, never correctness (no re-resolution, no unvalidated connect).
+
 **Blocked ranges:**
 
 | Family | Ranges                                                                                                                                                                        |
